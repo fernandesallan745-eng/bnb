@@ -23,9 +23,9 @@ type SpeechRecognitionInstance = {
   interimResults: boolean;
   lang: string;
   maxAlternatives: number;
-  onresult: (e: SpeechRecognitionResultEvent) => void;
-  onend: () => void;
-  onerror: (e: SpeechRecognitionErrorEvent) => void;
+  onresult: ((e: SpeechRecognitionResultEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((e: SpeechRecognitionErrorEvent) => void) | null;
   start: () => void;
   stop: () => void;
   abort: () => void;
@@ -85,13 +85,15 @@ export function useJarvisVoice({
 
   const navigate = useNavigate();
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const restartTimeoutRef = useRef<NodeJS.Timeout | number | null>(null);
   const shouldListenRef = useRef(config.enabled);
   const isSleepingRef = useRef(isSleeping);
   const configRef = useRef(config);
   const appActionsRef = useRef(appActions);
-  // After the user says "Hey Janvi", accept a short sequence of follow-up
-  // commands. Each accepted command refreshes the window for hands-free use.
+  // After the user says "Hey Janvi", accept follow-up commands hands-free.
+  // Each accepted command refreshes the window.
   const commandWindowUntilRef = useRef(0);
+  const executeCommandRef = useRef<(cmd: VoiceCommand) => void>(() => {});
 
   // Sync refs
   useEffect(() => {
@@ -125,21 +127,21 @@ export function useJarvisVoice({
           playJarvisChime("confirm");
         }
         if (conf.speechFeedback) {
-          speakJarvis(speech, { rate: conf.ttsRate, lang: conf.lang });
+          speakJarvis(speech, {
+            rate: conf.ttsRate,
+            lang: conf.lang,
+            onEnd: () => {
+              // Refresh hands-free follow-up window after Janvi finishes speaking
+              commandWindowUntilRef.current = Date.now() + 10_000;
+            },
+          });
         }
       };
 
       switch (command.type) {
         // --- Navigation ---
         case "nav_jobs":
-          respond(
-            actions.eyeTrackingEnabled && actions.gesturesEnabled
-              ? "Opening job search. Eye tracking and gestures are active. Look steadily at a job card to open its details."
-              : "Opening job search. Eye tracking and gestures are starting. Look steadily at a job card to open its details once the camera is ready.",
-            actions.eyeTrackingEnabled && actions.gesturesEnabled
-              ? "Jobs ready for gaze selection"
-              : "Jobs opening; hands-free controls starting",
-          );
+          respond("Opening jobs.", "Navigated to Jobs");
           navigate({ to: "/jobs", search: { q: "" } as never });
           break;
 
@@ -478,6 +480,10 @@ export function useJarvisVoice({
     [navigate, onConfigChange, onHelp],
   );
 
+  useEffect(() => {
+    executeCommandRef.current = executeCommand;
+  }, [executeCommand]);
+
   // Initialize and manage Web Speech API Recognition
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -492,8 +498,15 @@ export function useJarvisVoice({
 
     if (!config.enabled) {
       setStatus("idle");
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current as NodeJS.Timeout);
+        restartTimeoutRef.current = null;
+      }
       if (recognitionRef.current) {
         try {
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onresult = null;
           recognitionRef.current.abort();
         } catch {
           // Browser may have already stopped listening.
@@ -506,20 +519,50 @@ export function useJarvisVoice({
 
     let isUnmounted = false;
 
+    function scheduleRestart(delayMs = 250) {
+      if (isUnmounted || !shouldListenRef.current) return;
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current as NodeJS.Timeout);
+      }
+      restartTimeoutRef.current = setTimeout(() => {
+        restartTimeoutRef.current = null;
+        if (!isUnmounted && shouldListenRef.current) {
+          startRecognition();
+        }
+      }, delayMs);
+    }
+
     function startRecognition() {
       if (isUnmounted || !shouldListenRef.current || !SpeechRecognitionClass) return;
+
+      // Clean up previous recognition reference cleanly before starting
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.abort();
+        } catch {
+          // Ignored
+        }
+        recognitionRef.current = null;
+      }
 
       try {
         const rec = new SpeechRecognitionClass();
         recognitionRef.current = rec;
-        // Keep the recognition engine ready for the wake phrase. Command parsing
-        // still ignores ordinary speech unless it follows "Hey Janvi".
         rec.continuous = true;
-        rec.interimResults = false;
+        rec.interimResults = true;
         rec.lang = configRef.current.lang || "en-IN";
         rec.maxAlternatives = 1;
 
         rec.onresult = (e) => {
+          // Acoustic echo suppression:
+          // Ignore microphone input while Janvi is speaking aloud to avoid acoustic feedback.
+          if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
+            return;
+          }
+
           let interim = "";
           let final = "";
 
@@ -536,7 +579,10 @@ export function useJarvisVoice({
             }
           }
 
-          setLiveTranscript(interim || final);
+          const currentLive = (interim || final).trim();
+          if (currentLive) {
+            setLiveTranscript(currentLive);
+          }
 
           if (final.trim()) {
             const commandWindowOpen = Date.now() < commandWindowUntilRef.current;
@@ -551,12 +597,12 @@ export function useJarvisVoice({
               if (parsed.type === "sleep" || parsed.type === "disable") {
                 commandWindowUntilRef.current = 0;
               } else {
-                // Keep the hands-free session open for 5 seconds after each
-                // accepted command, so repeated "scroll down" commands work.
-                commandWindowUntilRef.current = Date.now() + 5_000;
+                // Keep the hands-free session open for 10 seconds after each
+                // accepted command, so repeated follow-ups ("scroll down", "click 1") work.
+                commandWindowUntilRef.current = Date.now() + 10_000;
               }
               setStatus("executing");
-              executeCommand(parsed);
+              executeCommandRef.current(parsed);
               setTimeout(() => {
                 if (!isUnmounted && shouldListenRef.current) {
                   setStatus(isSleepingRef.current ? "sleeping" : "listening");
@@ -571,23 +617,22 @@ export function useJarvisVoice({
         };
 
         rec.onerror = (e) => {
-          if (e.error === "not-allowed") {
+          if (e.error === "not-allowed" || e.error === "service-not-allowed") {
             setStatus("permission_denied");
           } else if (e.error === "no-speech") {
             // Normal silence timeout, keep going
+          } else if (e.error === "aborted") {
+            // Intentional abort or browser pause, onend will handle restart
           } else {
             console.debug("Speech recognition event:", e.error);
           }
         };
 
         rec.onend = () => {
-          // Continuous loop: auto-restart if enabled
+          recognitionRef.current = null;
+          // Continuous loop: auto-restart after audio device teardown
           if (!isUnmounted && shouldListenRef.current) {
-            setTimeout(() => {
-              if (!isUnmounted && shouldListenRef.current) {
-                startRecognition();
-              }
-            }, 50);
+            scheduleRestart(250);
           } else {
             setStatus("idle");
           }
@@ -596,7 +641,10 @@ export function useJarvisVoice({
         rec.start();
         setStatus(isSleepingRef.current ? "sleeping" : "listening");
       } catch (err) {
-        console.debug("Failed to start speech recognition:", err);
+        console.debug("Failed to start speech recognition, retrying in 350ms:", err);
+        // Resilient recovery: if rec.start() threw (e.g. device busy or audio releasing),
+        // schedule a retry so recognition does NOT permanently die!
+        scheduleRestart(350);
       }
     }
 
@@ -604,8 +652,15 @@ export function useJarvisVoice({
 
     return () => {
       isUnmounted = true;
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current as NodeJS.Timeout);
+        restartTimeoutRef.current = null;
+      }
       if (recognitionRef.current) {
         try {
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onresult = null;
           recognitionRef.current.abort();
         } catch {
           // Recognition is already closed.
@@ -613,7 +668,7 @@ export function useJarvisVoice({
         recognitionRef.current = null;
       }
     };
-  }, [config.enabled, executeCommand]);
+  }, [config.enabled, config.lang]);
 
   // Manage numbered badges overlay sync
   useEffect(() => {
@@ -688,10 +743,10 @@ export function useJarvisVoice({
         if (parsed.type === "sleep" || parsed.type === "disable") {
           commandWindowUntilRef.current = 0;
         } else {
-          commandWindowUntilRef.current = Date.now() + 5_000;
+          commandWindowUntilRef.current = Date.now() + 10_000;
         }
         setStatus("executing");
-        executeCommand(parsed);
+        executeCommandRef.current(parsed);
         setTimeout(() => {
           if (shouldListenRef.current) {
             setStatus(isSleepingRef.current ? "sleeping" : "listening");
@@ -700,7 +755,7 @@ export function useJarvisVoice({
       } else if (trimmed.length >= 3) {
         // Fallback to project question / AI assistant
         setStatus("executing");
-        executeCommand({
+        executeCommandRef.current({
           type: "ask_question",
           payload: trimmed,
           rawText: trimmed,
@@ -713,7 +768,7 @@ export function useJarvisVoice({
         }, 120);
       }
     },
-    [executeCommand],
+    [],
   );
 
   return {

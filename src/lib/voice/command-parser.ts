@@ -14,6 +14,12 @@ const WAKE_WORDS = [
   "ok janvi",
   "hello janvi",
   "hi janvi",
+  // Jaanvi variations
+  "hey jaanvi",
+  "okay jaanvi",
+  "ok jaanvi",
+  "hello jaanvi",
+  "hi jaanvi",
   // Jarvis
   "hey jarvis",
   "okay jarvis",
@@ -28,14 +34,19 @@ const WAKE_WORDS = [
   "hey jan vi",
   "hey genvi",
   "hey jenny",
-  "hey jaanvi",
+  "hey janve",
+  "hey jhanvi",
   "a janvi",
   // Single-word wake triggers (tested after prefixes)
   "google",
   "siri",
   "janvi",
+  "jaanvi",
+  "jhanvi",
   "jarvis",
   "alexa",
+  "genvi",
+  "johnny",
 ];
 
 export type ParseOptions = {
@@ -108,7 +119,7 @@ export function parseVoiceCommand(
     if (
       (cleanText === "" && hasWakeWord) ||
       /\b(wake up|wake|resume|listen|start listening|i'm back|online)\b/.test(cleanText) ||
-      /\b(?:janvi|siri|google|jarvis)\s+wake|wake\s+(?:up\s+)?(?:janvi|siri|google|jarvis)\b/.test(
+      /\b(?:janvi|jaanvi|jhanvi|siri|google|jarvis)\s+wake|wake\s+(?:up\s+)?(?:janvi|jaanvi|jhanvi|siri|google|jarvis)\b/.test(
         rawTranscript.toLowerCase(),
       )
     ) {

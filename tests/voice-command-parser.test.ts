@@ -104,4 +104,33 @@ describe("Janvi voice command parser", () => {
       })?.type,
     ).toBe("ask_question");
   });
+
+  it("handles 'hey jaanvi' and 'jaanvi' phonetic wake word variations and consecutive follow-ups", () => {
+    // 1st command: Initial navigation
+    expect(parseVoiceCommand("hey jaanvi go to jobs", { wakeWordRequired: true })?.type).toBe(
+      "nav_jobs",
+    );
+    expect(parseVoiceCommand("jaanvi go to jobs", { wakeWordRequired: true })?.type).toBe(
+      "nav_jobs",
+    );
+    expect(parseVoiceCommand("okay jaanvi go to jobs", { wakeWordRequired: true })?.type).toBe(
+      "nav_jobs",
+    );
+
+    // 2nd command: Follow-up command during hands-free command window (wakeWordRequired: false)
+    expect(parseVoiceCommand("scroll down", { wakeWordRequired: false })?.type).toBe("scroll_down");
+    expect(parseVoiceCommand("click 1", { wakeWordRequired: false })?.type).toBe("click_number");
+    expect(parseVoiceCommand("click 1", { wakeWordRequired: false })?.payload).toBe(1);
+    expect(parseVoiceCommand("show numbers", { wakeWordRequired: false })?.type).toBe("show_numbers");
+
+    // 2nd command: Follow-up command spoken with wake word repeated
+    expect(parseVoiceCommand("hey jaanvi scroll down", { wakeWordRequired: true })?.type).toBe(
+      "scroll_down",
+    );
+    expect(parseVoiceCommand("hey jaanvi click 1", { wakeWordRequired: true })?.type).toBe(
+      "click_number",
+    );
+    expect(parseVoiceCommand("jaanvi click 1", { wakeWordRequired: true })?.payload).toBe(1);
+  });
 });
+
