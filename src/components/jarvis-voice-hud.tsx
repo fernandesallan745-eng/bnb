@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Mic,
   MicOff,
@@ -13,6 +13,7 @@ import {
   Layers,
   Sparkles,
   Command,
+  ArrowRight,
 } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
 import { useJarvisVoice } from "@/lib/voice/use-jarvis-voice";
@@ -48,6 +49,8 @@ export function JarvisVoiceHud() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [wisprInput, setWisprInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const openHelp = useCallback(() => setHelpOpen(true), []);
 
   const {
@@ -59,6 +62,7 @@ export function JarvisVoiceHud() {
     showBadges,
     toggleStandby,
     toggleBadges,
+    executeVoiceText,
   } = useJarvisVoice({
     config: voiceNavConfig,
     onConfigChange: setVoiceNavConfig,
@@ -83,16 +87,39 @@ export function JarvisVoiceHud() {
     },
   });
 
-  if (!voiceNavConfig.enabled) {
-    return null;
-  }
-
   const toggleSpeechFeedback = () => {
     setVoiceNavConfig((prev) => ({
       ...prev,
       speechFeedback: !prev.speechFeedback,
     }));
   };
+
+  // Global shortcut (Cmd+J or Ctrl+J) to focus Wispr Pro command input
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        setCollapsed(false);
+        setTimeout(() => {
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        }, 50);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleWisprSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!wisprInput.trim()) return;
+    executeVoiceText(wisprInput);
+    setWisprInput("");
+  };
+
+  if (!voiceNavConfig.enabled) {
+    return null;
+  }
 
   return (
     <>
@@ -219,7 +246,7 @@ export function JarvisVoiceHud() {
                   <span className="text-muted-foreground italic">Sleeping… Say "Wake up"</span>
                 ) : (
                   <span className="text-muted-foreground italic">
-                    Say "Hey Janvi", then give commands for 5 seconds.
+                    Say "Hey Siri", "Hey Google", or "Hey Janvi"
                   </span>
                 )}
               </p>
@@ -231,6 +258,28 @@ export function JarvisVoiceHud() {
                 </div>
               )}
             </div>
+
+            {/* Wispr Pro / Direct Voice Command Bar */}
+            <form onSubmit={handleWisprSubmit} className="relative flex items-center">
+              <input
+                ref={inputRef}
+                type="text"
+                value={wisprInput}
+                onChange={(e) => setWisprInput(e.target.value)}
+                placeholder="Wispr dictate or type… (Cmd+J)"
+                className="w-full rounded-xl border border-border/80 bg-background/90 py-1.5 pl-2.5 pr-8 text-xs text-foreground placeholder:text-muted-foreground/80 focus:border-[#7BD3C2] focus:outline-none focus:ring-1 focus:ring-[#7BD3C2] transition-colors"
+                aria-label="Wispr Pro dictation or voice command input"
+              />
+              <button
+                type="submit"
+                disabled={!wisprInput.trim()}
+                className="absolute right-1 flex size-5 items-center justify-center rounded-lg bg-[#7BD3C2] text-[#141817] disabled:opacity-30 disabled:pointer-events-none hover:brightness-105 transition-opacity"
+                title="Execute Command (Enter)"
+                aria-label="Execute command"
+              >
+                <ArrowRight className="size-3" />
+              </button>
+            </form>
 
             {/* Action Buttons Toolbar */}
             <div className="grid grid-cols-3 gap-1.5">
@@ -295,7 +344,7 @@ export function JarvisVoiceHud() {
             {/* Quick Prompt Hint */}
             <div className="flex items-center justify-between text-[10px] text-muted-foreground border-t border-border/50 pt-1.5 px-0.5">
               <span>
-                Try: <strong>"Hey Janvi, click 1"</strong>
+                Wake words: <strong>"Hey Siri"</strong> / <strong>"Hey Google"</strong>
               </span>
               <button
                 type="button"
@@ -322,11 +371,32 @@ export function JarvisVoiceHud() {
           </DialogHeader>
 
           <p className="text-xs text-muted-foreground">
-              Janvi gives people with zero motor function (no hands) complete, hands-free mastery
-            over Ableo. Speak naturally into your microphone.
+            Janvi gives people with zero motor function (no hands) complete, hands-free mastery
+            over Ableo. Speak naturally into your microphone or dictate with Wispr Pro.
           </p>
 
           <div className="space-y-4 pt-2 text-xs">
+            {/* Wispr Pro Supercharged Dictation */}
+            <div className="rounded-xl border border-[#7BD3C2]/50 bg-[#7BD3C2]/10 p-3 space-y-1.5">
+              <h4 className="font-bold text-foreground flex items-center gap-1.5 text-sm">
+                <Sparkles className="size-4 text-brand" />
+                Wispr Pro Dictation (Zero Transcription Errors)
+              </h4>
+              <p className="text-muted-foreground">
+                If you have the Wispr Pro desktop app installed, you can dictate commands without speech recognition errors:
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-muted-foreground font-medium">
+                <li>
+                  Press <kbd className="rounded border px-1 py-0.5 font-mono text-[10px] bg-background">Cmd+J</kbd> (Mac) or <kbd className="rounded border px-1 py-0.5 font-mono text-[10px] bg-background">Ctrl+J</kbd> to focus the Janvi input.
+                </li>
+                <li>
+                  Trigger your <strong>Wispr Pro hotkey</strong> and speak (e.g. <em>"Click 3"</em>, <em>"Go to jobs"</em>, or <em>"What accommodations exist?"</em>).
+                </li>
+                <li>
+                  Press <kbd className="rounded border px-1 py-0.5 font-mono text-[10px] bg-background">Enter</kbd> (or click the arrow) — Janvi executes immediately!
+                </li>
+              </ol>
+            </div>
             {/* Clicking by Number */}
             <div className="rounded-xl border border-[#7BD3C2]/50 bg-[#7BD3C2]/10 p-3">
               <h4 className="font-bold text-foreground flex items-center gap-1.5 text-sm mb-1">

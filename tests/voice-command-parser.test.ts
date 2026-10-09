@@ -21,6 +21,28 @@ describe("Janvi voice command parser", () => {
     });
   });
 
+  it("supports multiple popular wake words like Hey Siri and Hey Google", () => {
+    expect(parseVoiceCommand("Hey Siri, open dashboard", { wakeWordRequired: true })?.type).toBe(
+      "nav_dashboard",
+    );
+    expect(parseVoiceCommand("Hey Google, go to jobs", { wakeWordRequired: true })?.type).toBe(
+      "nav_jobs",
+    );
+    expect(parseVoiceCommand("OK Google, scroll down", { wakeWordRequired: true })?.type).toBe(
+      "scroll_down",
+    );
+    expect(parseVoiceCommand("Hey Siri")?.type).toBe("wake");
+    expect(parseVoiceCommand("Hey Google")?.type).toBe("wake");
+    expect(stripWakeWord("Hey Siri, click 3")).toEqual({
+      hasWakeWord: true,
+      cleanText: "click 3",
+    });
+    expect(stripWakeWord("Hey Google, show numbers")).toEqual({
+      hasWakeWord: true,
+      cleanText: "show numbers",
+    });
+  });
+
   it("accepts one normal command after the wake-word command window opens", () => {
     // The hook opens this window for eight seconds after "Hey Janvi".
     expect(parseVoiceCommand("open jobs", { wakeWordRequired: false })?.type).toBe("nav_jobs");
@@ -65,5 +87,21 @@ describe("Janvi voice command parser", () => {
     const command = parseVoiceCommand("Hey Janvi, how does the job matching work?");
     expect(command?.type).toBe("ask_question");
     expect(command?.payload).toBe("how does the job matching work");
+  });
+
+  it("handles clean Wispr Pro formatted dictation with or without wake words", () => {
+    // When dictated through Wispr Pro into the command bar (wakeWordRequired: false)
+    expect(parseVoiceCommand("Click 4.", { wakeWordRequired: false })?.type).toBe("click_number");
+    expect(parseVoiceCommand("Click 4.", { wakeWordRequired: false })?.payload).toBe(4);
+    expect(parseVoiceCommand("Go to jobs.", { wakeWordRequired: false })?.type).toBe("nav_jobs");
+    expect(parseVoiceCommand("Scroll down.", { wakeWordRequired: false })?.type).toBe("scroll_down");
+    expect(
+      parseVoiceCommand("Hey Janvi, open my dashboard.", { wakeWordRequired: false })?.type,
+    ).toBe("nav_dashboard");
+    expect(
+      parseVoiceCommand("What accessibility accommodations are supported?", {
+        wakeWordRequired: false,
+      })?.type,
+    ).toBe("ask_question");
   });
 });

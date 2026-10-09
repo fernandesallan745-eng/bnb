@@ -13,6 +13,7 @@ import {
   Compass,
   LogOut,
   ChevronDown,
+  Mic,
 } from "lucide-react";
 import { AccessibilitySheetTrigger } from "./accessibility-toolbar";
 import { useAppState } from "@/lib/app-state";
@@ -45,7 +46,7 @@ const PRIMARY_NAV = [
 ] as const;
 
 export function SiteHeader() {
-  const { savedJobs, theme, toggleTheme } = useAppState();
+  const { savedJobs, theme, toggleTheme, voiceNavConfig, setVoiceNavEnabled } = useAppState();
   const { user, isLoading, logout } = useAuth();
 
   return (
@@ -109,6 +110,37 @@ export function SiteHeader() {
 
           {/* Right: Actions, Accessibility, & User Menu */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Quick Hands-Free Voice Control Trigger */}
+            <button
+              type="button"
+              onClick={() => setVoiceNavEnabled(!voiceNavConfig.enabled)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all active:scale-95 whitespace-nowrap ${
+                voiceNavConfig.enabled
+                  ? "border-[#191716] bg-[#7BD3C2] text-[#141817] shadow-[1px_1px_0px_#141817] font-semibold"
+                  : "border-border bg-secondary/80 text-foreground hover:bg-secondary hover:border-foreground/40"
+              }`}
+              aria-label={
+                voiceNavConfig.enabled
+                  ? "Turn off hands-free voice control"
+                  : "Turn on hands-free voice control (say Hey Siri, Hey Google, or Hey Janvi)"
+              }
+              title={
+                voiceNavConfig.enabled
+                  ? "Voice Listening Active — say 'Hey Siri' or 'Hey Google'"
+                  : "Turn On Voice Control (say 'Hey Siri' or 'Hey Google')"
+              }
+            >
+              <Mic
+                className={`size-3.5 ${
+                  voiceNavConfig.enabled ? "text-[#141817] animate-pulse" : "text-foreground"
+                }`}
+              />
+              <span className="font-sans font-semibold">Voice</span>
+              {voiceNavConfig.enabled && (
+                <span className="size-1.5 rounded-full bg-[#141817] animate-ping" />
+              )}
+            </button>
+
             {/* Quick A11y Suite Trigger */}
             <AccessibilitySheetTrigger />
 

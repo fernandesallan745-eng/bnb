@@ -672,6 +672,50 @@ export function useJarvisVoice({
     }
   }, [showBadgesLocal, config.speechFeedback, config.ttsRate, config.lang, onConfigChange]);
 
+  // Directly execute voice or typed text (e.g. from Wispr Pro dictation or keyboard)
+  const executeVoiceText = useCallback(
+    (rawText: string) => {
+      const trimmed = rawText.trim();
+      if (!trimmed) return;
+
+      setLiveTranscript(trimmed);
+      const parsed = parseVoiceCommand(trimmed, {
+        wakeWordRequired: false,
+        isSleeping: false,
+      });
+
+      if (parsed) {
+        if (parsed.type === "sleep" || parsed.type === "disable") {
+          commandWindowUntilRef.current = 0;
+        } else {
+          commandWindowUntilRef.current = Date.now() + 5_000;
+        }
+        setStatus("executing");
+        executeCommand(parsed);
+        setTimeout(() => {
+          if (shouldListenRef.current) {
+            setStatus(isSleepingRef.current ? "sleeping" : "listening");
+          }
+        }, 120);
+      } else if (trimmed.length >= 3) {
+        // Fallback to project question / AI assistant
+        setStatus("executing");
+        executeCommand({
+          type: "ask_question",
+          payload: trimmed,
+          rawText: trimmed,
+          confidence: 0.9,
+        });
+        setTimeout(() => {
+          if (shouldListenRef.current) {
+            setStatus(isSleepingRef.current ? "sleeping" : "listening");
+          }
+        }, 120);
+      }
+    },
+    [executeCommand],
+  );
+
   return {
     status,
     isSleeping,
@@ -683,5 +727,6 @@ export function useJarvisVoice({
     toggleStandby,
     toggleBadges,
     executeCommand,
+    executeVoiceText,
   };
 }

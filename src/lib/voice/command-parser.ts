@@ -1,7 +1,42 @@
 import { extractSpokenNumber } from "./words-to-numbers";
 import type { VoiceCommand } from "./types";
 
-const WAKE_WORDS = ["hey janvi", "janvi", "okay janvi", "ok janvi", "hi janvi", "computer"];
+const WAKE_WORDS = [
+  // Google
+  "hey google",
+  "okay google",
+  "ok google",
+  // Siri
+  "hey siri",
+  // Janvi & variations
+  "hey janvi",
+  "okay janvi",
+  "ok janvi",
+  "hello janvi",
+  "hi janvi",
+  // Jarvis
+  "hey jarvis",
+  "okay jarvis",
+  "ok jarvis",
+  // Alexa & computer
+  "hey alexa",
+  "computer",
+  // Common phonetic mishearings by speech-to-text engines
+  "hey johnny",
+  "hey generic",
+  "hey january",
+  "hey jan vi",
+  "hey genvi",
+  "hey jenny",
+  "hey jaanvi",
+  "a janvi",
+  // Single-word wake triggers (tested after prefixes)
+  "google",
+  "siri",
+  "janvi",
+  "jarvis",
+  "alexa",
+];
 
 export type ParseOptions = {
   wakeWordRequired?: boolean;
@@ -73,7 +108,9 @@ export function parseVoiceCommand(
     if (
       (cleanText === "" && hasWakeWord) ||
       /\b(wake up|wake|resume|listen|start listening|i'm back|online)\b/.test(cleanText) ||
-      /\b(janvi wake|wake janvi)\b/.test(rawTranscript.toLowerCase())
+      /\b(?:janvi|siri|google|jarvis)\s+wake|wake\s+(?:up\s+)?(?:janvi|siri|google|jarvis)\b/.test(
+        rawTranscript.toLowerCase(),
+      )
     ) {
       return {
         type: "wake",
@@ -195,7 +232,7 @@ export function parseVoiceCommand(
   }
 
   if (
-    /\b(?:go to|open|show|take me to|bring me to|navigate to)\s+(?:the\s+)?dashboard\b/.test(
+    /\b(?:go to|open|show|take me to|bring me to|navigate to)\s+(?:(?:the|my)\s+)?dashboard\b/.test(
       text,
     ) ||
     text === "dashboard" ||
