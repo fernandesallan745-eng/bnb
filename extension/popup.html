@@ -2,108 +2,71 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Handsfree Controller</title>
+  <title>Voice Navigation Settings</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="popup-container">
-    <!-- Header -->
     <header class="header">
       <div class="brand">
         <div class="logo-dot"></div>
-        <div>
-          <h1 class="title">Handsfree</h1>
-          <p class="subtitle">Voice & Webcam Browsing</p>
-        </div>
+        <h1>Voice Navigation</h1>
       </div>
-      <div class="status-badge" id="status-badge">Off</div>
+      <span class="status-badge" id="status-badge">Idle</span>
     </header>
 
-    <!-- Master Switch -->
-    <div class="master-toggle-card">
-      <div class="toggle-info">
-        <span class="toggle-label">Enable Handsfree</span>
-        <span class="toggle-desc">Webcam cursor & voice control</span>
+    <div class="section toggle-card">
+      <div>
+        <label for="enable-toggle" class="section-title">Enable Voice Navigation</label>
+        <p class="section-desc">Floating mic & hands-free control</p>
       </div>
       <label class="switch">
-        <input type="checkbox" id="master-switch">
+        <input type="checkbox" id="enable-toggle">
         <span class="slider"></span>
       </label>
     </div>
 
-    <!-- Mode Selector -->
     <div class="section">
-      <label class="section-label">Tracking Input Mode</label>
-      <div class="mode-grid">
-        <button type="button" class="mode-btn active" data-mode="hybrid">
-          <span class="mode-icon">✦</span>
-          <span>Hybrid</span>
-        </button>
-        <button type="button" class="mode-btn" data-mode="head">
-          <span class="mode-icon">👤</span>
-          <span>Head / Gaze</span>
-        </button>
-        <button type="button" class="mode-btn" data-mode="hand">
-          <span class="mode-icon">✋</span>
-          <span>Air Cursor</span>
-        </button>
-        <button type="button" class="mode-btn" data-mode="voice">
-          <span class="mode-icon">🎤</span>
-          <span>Voice Only</span>
-        </button>
+      <label for="lang-select" class="section-title">Speech Language (Whisper)</label>
+      <select id="lang-select" class="select-input">
+        <option value="en">English (en)</option>
+        <option value="es">Spanish (es)</option>
+        <option value="fr">French (fr)</option>
+        <option value="de">German (de)</option>
+        <option value="it">Italian (it)</option>
+        <option value="pt">Portuguese (pt)</option>
+        <option value="ja">Japanese (ja)</option>
+        <option value="zh">Chinese (zh)</option>
+        <option value="hi">Hindi (hi)</option>
+        <option value="auto">Auto Detect</option>
+      </select>
+    </div>
+
+    <div class="section">
+      <label for="server-url-input" class="section-title">Server Proxy URL</label>
+      <input type="text" id="server-url-input" class="text-input" value="http://localhost:3001">
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">Custom Voice Commands</span>
       </div>
-    </div>
-
-    <!-- Controls -->
-    <div class="section controls-group">
-      <div class="slider-row">
-        <div class="slider-header">
-          <span>Dwell Click Delay</span>
-          <span class="slider-value" id="dwell-val">1.2s</span>
-        </div>
-        <input type="range" id="dwell-slider" min="600" max="2500" step="100" value="1200">
+      <div class="command-form">
+        <input type="text" id="new-phrase" class="text-input" placeholder="Spoken phrase (e.g. show pricing)">
+        <select id="new-action" class="select-input">
+          <option value="scroll_down">Scroll Down</option>
+          <option value="scroll_up">Scroll Up</option>
+          <option value="top">Go to Top</option>
+          <option value="bottom">Go to Bottom</option>
+          <option value="back">Go Back</option>
+          <option value="forward">Go Forward</option>
+          <option value="refresh">Refresh Page</option>
+          <option value="read">Read Page</option>
+        </select>
+        <button type="button" id="add-cmd-btn" class="btn btn-primary">Add Command</button>
       </div>
-
-      <div class="slider-row">
-        <div class="slider-header">
-          <span>Cursor Sensitivity</span>
-          <span class="slider-value" id="sens-val">1.4x</span>
-        </div>
-        <input type="range" id="sens-slider" min="0.6" max="2.5" step="0.1" value="1.4">
-      </div>
+      <div id="commands-list" class="commands-list"></div>
     </div>
-
-    <!-- Toggles -->
-    <div class="section toggles-row">
-      <label class="checkbox-row">
-        <input type="checkbox" id="sound-checkbox" checked>
-        <span>Audio Click Sound</span>
-      </label>
-      <label class="checkbox-row">
-        <input type="checkbox" id="guard-checkbox" checked>
-        <span>Accidental Click Guard</span>
-      </label>
-    </div>
-
-    <!-- Actions -->
-    <div class="actions-group">
-      <button type="button" class="btn btn-primary" id="open-tracker-btn">
-        📷 Open Camera &amp; Mic Tracker
-      </button>
-      <button type="button" class="btn btn-secondary" id="open-tab-btn">
-        ↗ Open Tracker in Full Tab
-      </button>
-      <button type="button" class="btn btn-secondary" id="toggle-numbers-btn">
-        🔢 Toggle Page Number Tags
-      </button>
-    </div>
-
-    <!-- Footer Links -->
-    <footer class="footer">
-      <a href="http://localhost:3000/calibration" target="_blank" class="footer-link">30s Calibration</a>
-      <span>•</span>
-      <a href="http://localhost:3000/evaluate" target="_blank" class="footer-link">Benchmark Suite</a>
-    </footer>
   </div>
 
   <script src="popup.js"></script>

@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "package:extension": "node scripts/package-extension.js",
-    "start:extension": "node scripts/start-extension.js"
+    "start:extension": "node scripts/start-extension.js",
+    "server": "node server/index.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

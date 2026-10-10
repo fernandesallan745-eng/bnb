@@ -1,192 +1,122 @@
-// Handsfree Chrome Extension - Background Service Worker (Manifest V3)
-let state = {
-  enabled: false,
-  mode: "hybrid", // "hybrid" | "head" | "hand" | "voice"
-  dwellTimeMs: 1200,
-  sensitivity: 1.4,
-  smoothing: 0.75,
-  showNumbers: false,
-  soundFeedback: true,
-  accidentalGuard: true,
-  trackerWindowId: null,
-};
+const DEFAULT_SERVER_URL = 'http://localhost:3001';
 
-// Initialize state from chrome.storage.local
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(["handsfree_settings"], (res) => {
-    if (res.handsfree_settings) {
-      state = { ...state, ...res.handsfree_settings };
-    } else {
-      chrome.storage.local.set({ handsfree_settings: state });
-    }
-  });
-});
-
-// Broadcast state change to all tabs
-async function broadcastToTabs(message) {
-  try {
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      if (tab.id && tab.url && !tab.url.startsWith("chrome://")) {
-        chrome.tabs.sendMessage(tab.id, message).catch(() => {
-          // tab might not have content script yet or is sleeping
-        });
-      }
-    }
-  } catch (err) {
-    console.error("Broadcast error:", err);
-  }
-}
-
-// Send message to active tab
-async function sendToActiveTab(message) {
-  try {
-    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (activeTab?.id) {
-      chrome.tabs.sendMessage(activeTab.id, message).catch(() => {});
-    }
-  } catch (err) {
-    console.error("Send to active tab error:", err);
-  }
-}
-
-// Message Router
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // 1. Query State
-  if (request.type === "GET_STATE") {
-    sendResponse({ state });
-    return true;
-  }
-
-  // 2. Update Settings
-  if (request.type === "UPDATE_SETTINGS") {
-    state = { ...state, ...request.payload };
-    chrome.storage.local.set({ handsfree_settings: state });
-    broadcastToTabs({ type: "HANDSFREE_STATE_CHANGED", state });
-    sendResponse({ success: true, state });
-    return true;
-  }
-
-  // 3. Toggle Handsfree On / Off
-  if (request.type === "TOGGLE_HANDSFREE") {
-    state.enabled = request.payload !== undefined ? request.payload : !state.enabled;
-    chrome.storage.local.set({ handsfree_settings: state });
-    broadcastToTabs({ type: "HANDSFREE_STATE_CHANGED", state });
-
-    if (state.enabled) {
-      openTrackerWindow();
-    } else {
-      closeTrackerWindow();
-    }
-
-    sendResponse({ success: true, state });
-    return true;
-  }
-
-  // 3b. Explicit Open Tracker Action
-  if (request.type === "OPEN_TRACKER") {
-    state.enabled = true;
-    chrome.storage.local.set({ handsfree_settings: state });
-    broadcastToTabs({ type: "HANDSFREE_STATE_CHANGED", state });
-    openTrackerWindow();
-    sendResponse({ success: true, state });
-    return true;
-  }
-
-  // 4. Coordinates / Telemetry from Tracker Window -> Active Tab
-  if (request.type === "TRACKER_CURSOR_UPDATE") {
-    if (state.enabled) {
-      sendToActiveTab({
-        type: "HANDSFREE_CURSOR_UPDATE",
-        payload: request.payload, // { x, y, source: "head"|"hand", confidence }
-      });
-    }
-    sendResponse({ ok: true });
-    return true;
-  }
-
-  // 5. Action from Tracker (Click, Scroll, Voice Command, Type)
-  if (request.type === "TRACKER_ACTION") {
-    if (state.enabled) {
-      sendToActiveTab({
-        type: "HANDSFREE_ACTION",
-        action: request.action,
-        payload: request.payload,
-      });
-    }
-    sendResponse({ ok: true });
-    return true;
-  }
-
-  // 6. Navigation Actions (Back, Forward, Reload, Tab)
-  if (request.type === "NAVIGATE_PAGE") {
-    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
-      const tab = tabs[0];
-      if (!tab?.id) return;
-      if (request.action === "back") chrome.tabs.goBack(tab.id);
-      if (request.action === "forward") chrome.tabs.goForward(tab.id);
-      if (request.action === "reload") chrome.tabs.reload(tab.id);
+async function getServerUrl() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['voice_nav_server_url'], (res) => {
+      resolve((res && res.voice_nav_server_url) || DEFAULT_SERVER_URL);
     });
-    sendResponse({ ok: true });
+  });
+}
+
+function dataUrlToBlob(dataUrl) {
+  const parts = dataUrl.split(',');
+  const mime = parts[0].match(/:(.*?);/)[1];
+  const bstr = atob(parts[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+}
+
+function bufferToDataUrl(arrayBuffer, mimeType) {
+  let binary = '';
+  const bytes = new Uint8Array(arrayBuffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'VOICE_NAV_TRANSCRIBE') {
+    handleTranscribe(request, sendResponse);
+    return true;
+  }
+
+  if (request.type === 'VOICE_NAV_SPEAK') {
+    handleSpeak(request, sendResponse);
+    return true;
+  }
+
+  if (request.type === 'VOICE_NAV_INTENT') {
+    handleIntent(request, sendResponse);
     return true;
   }
 });
 
-// Track when tracker window is closed by user
-chrome.windows?.onRemoved?.addListener((winId) => {
-  if (winId === state.trackerWindowId) {
-    state.trackerWindowId = null;
-  }
-});
-
-// Helper: Open tracker window (compact floating companion window with webcam & mic)
-async function openTrackerWindow() {
-  const trackerUrl = chrome.runtime.getURL("tracker.html");
-
-  if (state.trackerWindowId) {
-    try {
-      const existing = await chrome.windows.get(state.trackerWindowId);
-      if (existing) {
-        await chrome.windows.update(state.trackerWindowId, {
-          focused: true,
-          drawAttention: true,
-        });
-        return;
-      }
-    } catch {
-      state.trackerWindowId = null;
-    }
-  }
-
+async function handleTranscribe(request, sendResponse) {
   try {
-    chrome.windows.create(
-      {
-        url: trackerUrl,
-        type: "popup",
-        width: 400,
-        height: 540,
-        left: 40,
-        top: 60,
-        focused: true,
-      },
-      (win) => {
-        if (chrome.runtime.lastError || !win) {
-          console.warn("Could not create popup window, opening in tab instead:", chrome.runtime.lastError);
-          chrome.tabs.create({ url: trackerUrl, active: true });
-        } else {
-          state.trackerWindowId = win.id;
-        }
-      },
-    );
+    const serverUrl = await getServerUrl();
+    const audioBlob = dataUrlToBlob(request.dataUrl);
+
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'speech.webm');
+    if (request.language && request.language !== 'auto') {
+      formData.append('language', request.language);
+    }
+
+    const response = await fetch(`${serverUrl}/transcribe`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return sendResponse({ error: `Transcription failed: ${response.status} ${errText}` });
+    }
+
+    const data = await response.json();
+    sendResponse({ text: data.text || '' });
   } catch (err) {
-    console.warn("chrome.windows.create threw error, falling back to tab:", err);
-    chrome.tabs.create({ url: trackerUrl, active: true });
+    sendResponse({ error: err.message || 'Network error during transcription' });
   }
 }
 
-function closeTrackerWindow() {
-  if (state.trackerWindowId) {
-    chrome.windows.remove(state.trackerWindowId).catch(() => {});
-    state.trackerWindowId = null;
+async function handleSpeak(request, sendResponse) {
+  try {
+    const serverUrl = await getServerUrl();
+    const response = await fetch(`${serverUrl}/speak`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: request.text })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return sendResponse({ error: `Speech synthesis failed: ${response.status} ${errText}` });
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const dataUrl = bufferToDataUrl(arrayBuffer, 'audio/mpeg');
+    sendResponse({ dataUrl });
+  } catch (err) {
+    sendResponse({ error: err.message || 'Network error during speech synthesis' });
+  }
+}
+
+async function handleIntent(request, sendResponse) {
+  try {
+    const serverUrl = await getServerUrl();
+    const response = await fetch(`${serverUrl}/intent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: request.transcript,
+        elements: request.elements
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return sendResponse({ error: `Intent resolution failed: ${response.status} ${errText}` });
+    }
+
+    const data = await response.json();
+    sendResponse(data);
+  } catch (err) {
+    sendResponse({ error: err.message || 'Network error resolving intent' });
   }
 }

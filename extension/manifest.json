@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Handsfree: Voice & Webcam-Based Browsing",
-  "short_name": "Handsfree",
+  "name": "Voice Navigation: Hands-free Web Browsing",
+  "short_name": "VoiceNav",
   "version": "1.0.0",
-  "description": "Assistive handsfree web browsing on any website. Control cursor with head or hand movements, navigate with voice commands, and dictate into search bars.",
+  "description": "Browse hands-free with voice commands powered by Whisper speech-to-text and ElevenLabs speech synthesis.",
   "permissions": [
     "storage",
     "activeTab",
@@ -11,11 +11,14 @@
     "tabs"
   ],
   "host_permissions": [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://*/*",
     "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Handsfree Controller",
+    "default_title": "Voice Navigation Settings",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
@@ -28,21 +31,13 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["overlay.css"],
-      "run_at": "document_end"
+      "js": ["voice-nav.js"],
+      "run_at": "document_idle"
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "tracker.html",
-        "tracker.js",
-        "tracker.css",
-        "overlay.css",
-        "icons/*"
-      ],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
 }

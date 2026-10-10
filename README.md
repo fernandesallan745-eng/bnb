@@ -26,6 +26,69 @@
 
 ---
 
+## 🎙️ Voice Navigation System (Whisper + ElevenLabs)
+
+A complete hands-free voice navigation system for websites, similar to Skynet's "All in One Accessibility" voice navigation. Powered by **OpenAI Whisper** for speech-to-text, **ElevenLabs TTS** for low-latency streaming spoken feedback, and an **LLM intent fallback** engine.
+
+### Project Structure
+- **/server**: Node.js + Express proxy keeping API keys off the client.
+  - `POST /transcribe`: Accepts multipart webm audio, forwards to Whisper (`whisper-1`) with optional language parameter, returns `{ text }`.
+  - `POST /speak`: Accepts `{ text }`, calls ElevenLabs (`eleven_flash_v2_5`), streams audio/mpeg, and caches audio in memory for repeated phrases.
+  - `POST /intent`: Accepts `{ transcript, elements }`, returns action JSON (`click`, `scroll`, `navigate`, `type`, `none`).
+  - Rate limiting & CORS enabled.
+- **/client**: A single vanilla JavaScript file (`voice-nav.js`) that injects a floating mic button into any web page via `<script>` tag.
+  - Clean modular architecture: Audio capture (`AnalyserNode` RMS silence detection ~900ms, clips >= 4KB), Whisper hallucination filtering, DOM actions (highlight & click), and API client.
+  - Pauses microphone capture while ElevenLabs audio is speaking to prevent self-triggering.
+  - Built-in commands + user-defined custom commands stored in `localStorage`.
+- **/extension**: Manifest V3 Chrome extension that reuses the exact same `voice-nav.js` client code as a content script across all websites.
+  - Routes fetch calls through the background service worker to prevent CORS and mixed-content issues.
+  - Popup with On/Off toggle, language selector, server URL configuration, and custom command editor (`chrome.storage.sync`).
+
+---
+
+### 🚀 Setup & Getting Started
+
+#### 1. Configure Server Environment Variables
+Create `server/.env` (or copy from `server/.env.example`):
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+ELEVEN_API_KEY=your_elevenlabs_api_key_here
+ELEVEN_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+PORT=3001
+```
+
+#### 2. Start the Proxy Server
+```bash
+cd server
+npm install
+npm start
+```
+Or from the project root:
+```bash
+npm run server
+```
+Verify the server is running by opening: `http://localhost:3001/health`.
+
+#### 3. Test the Client (Demo Page)
+Open `client/demo.html` in your browser (or serve via any local web server).
+- Click the floating microphone button in the bottom-right (or press **Alt+V**).
+- Speak voice commands:
+  - `"scroll down"` / `"scroll up"` / `"go to top"` / `"go to bottom"`
+  - `"click pricing"` / `"open contact"`
+  - `"type hello into the focused field"`
+  - `"read this page"`
+  - `"stop listening"`
+
+#### 4. Load the Chrome Extension (Manifest V3)
+1. Open Google Chrome (or Brave, Edge, Arc).
+2. Navigate to `chrome://extensions`.
+3. Enable **Developer mode** (toggle in the top-right corner).
+4. Click **Load unpacked** and select the `extension` folder in this repository.
+5. Open any website.
+6. Click the Voice Navigation toolbar icon to toggle navigation, change language, or add custom voice shortcuts.
+
+---
+
 ## 🧭 Problem Statement Summary
 
 > **Title**: 2. Handsfree: Voice and Webcam-Based Browsing  

@@ -1,173 +1,148 @@
-// Handsfree Extension Popup Logic
-document.addEventListener("DOMContentLoaded", () => {
-  const masterSwitch = document.getElementById("master-switch");
-  const statusBadge = document.getElementById("status-badge");
-  const modeButtons = document.querySelectorAll(".mode-btn");
-  const dwellSlider = document.getElementById("dwell-slider");
-  const dwellVal = document.getElementById("dwell-val");
-  const sensSlider = document.getElementById("sens-slider");
-  const sensVal = document.getElementById("sens-val");
-  const soundCheckbox = document.getElementById("sound-checkbox");
-  const guardCheckbox = document.getElementById("guard-checkbox");
-  const openTrackerBtn = document.getElementById("open-tracker-btn");
-  const toggleNumbersBtn = document.getElementById("toggle-numbers-btn");
+document.addEventListener('DOMContentLoaded', () => {
+  const enableToggle = document.getElementById('enable-toggle');
+  const langSelect = document.getElementById('lang-select');
+  const serverUrlInput = document.getElementById('server-url-input');
+  const statusBadge = document.getElementById('status-badge');
+  const newPhraseInput = document.getElementById('new-phrase');
+  const newActionSelect = document.getElementById('new-action');
+  const addCmdBtn = document.getElementById('add-cmd-btn');
+  const commandsList = document.getElementById('commands-list');
 
-  let currentSettings = {
+  let state = {
     enabled: false,
-    mode: "hybrid",
-    dwellTimeMs: 1200,
-    sensitivity: 1.4,
-    soundFeedback: true,
-    accidentalGuard: true,
+    language: 'en',
+    serverUrl: 'http://localhost:3001',
+    customCommands: {}
   };
 
-  // Fetch initial state
-  chrome.runtime.sendMessage({ type: "GET_STATE" }, (res) => {
-    if (res?.state) {
-      currentSettings = { ...currentSettings, ...res.state };
+  chrome.storage.sync.get(
+    ['voice_nav_enabled', 'voice_nav_language', 'voice_nav_server_url', 'voice_nav_custom_commands'],
+    (res) => {
+      if (res) {
+        state.enabled = Boolean(res.voice_nav_enabled);
+        state.language = res.voice_nav_language || 'en';
+        state.serverUrl = res.voice_nav_server_url || 'http://localhost:3001';
+        state.customCommands = res.voice_nav_custom_commands || {};
+      }
       applyStateToUI();
     }
-  });
+  );
 
   function applyStateToUI() {
-    masterSwitch.checked = currentSettings.enabled;
-    if (currentSettings.enabled) {
-      statusBadge.textContent = "Active";
-      statusBadge.className = "status-badge active";
+    enableToggle.checked = state.enabled;
+    langSelect.value = state.language;
+    serverUrlInput.value = state.serverUrl;
+
+    if (state.enabled) {
+      statusBadge.textContent = 'Active';
+      statusBadge.className = 'status-badge active';
     } else {
-      statusBadge.textContent = "Off";
-      statusBadge.className = "status-badge";
+      statusBadge.textContent = 'Idle';
+      statusBadge.className = 'status-badge';
     }
 
-    modeButtons.forEach((btn) => {
-      if (btn.dataset.mode === currentSettings.mode) {
-        btn.classList.add("active");
-      } else {
-        btn.classList.remove("active");
-      }
-    });
-
-    dwellSlider.value = currentSettings.dwellTimeMs;
-    dwellVal.textContent = `${(currentSettings.dwellTimeMs / 1000).toFixed(1)}s`;
-
-    sensSlider.value = currentSettings.sensitivity;
-    sensVal.textContent = `${currentSettings.sensitivity.toFixed(1)}x`;
-
-    soundCheckbox.checked = currentSettings.soundFeedback !== false;
-    guardCheckbox.checked = currentSettings.accidentalGuard !== false;
+    renderCommandsList();
   }
 
-  function updateSettings(delta) {
-    currentSettings = { ...currentSettings, ...delta };
-    chrome.runtime.sendMessage({
-      type: "UPDATE_SETTINGS",
-      payload: delta,
-    });
-    applyStateToUI();
-  }
+  function renderCommandsList() {
+    commandsList.innerHTML = '';
+    const entries = Object.entries(state.customCommands);
 
-  // Event Listeners
-  masterSwitch.addEventListener("change", (e) => {
-    chrome.runtime.sendMessage({
-      type: "TOGGLE_HANDSFREE",
-      payload: e.target.checked,
-    }, (res) => {
-      if (res?.state) {
-        currentSettings = { ...currentSettings, ...res.state };
-        applyStateToUI();
-      }
-    });
-  });
+    if (entries.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.color = '#64748b';
+      empty.style.fontSize = '11px';
+      empty.style.padding = '4px 0';
+      empty.textContent = 'No custom commands defined yet.';
+      commandsList.appendChild(empty);
+      return;
+    }
 
-  modeButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      updateSettings({ mode: btn.dataset.mode });
-    });
-  });
+    entries.forEach(([phrase, action]) => {
+      const item = document.createElement('div');
+      item.className = 'command-item';
 
-  dwellSlider.addEventListener("input", (e) => {
-    const val = parseInt(e.target.value, 10);
-    dwellVal.textContent = `${(val / 1000).toFixed(1)}s`;
-    updateSettings({ dwellTimeMs: val });
-  });
+      const textWrap = document.createElement('div');
+      const phraseSpan = document.createElement('span');
+      phraseSpan.className = 'command-phrase';
+      phraseSpan.textContent = `"${phrase}"`;
 
-  sensSlider.addEventListener("input", (e) => {
-    const val = parseFloat(e.target.value);
-    sensVal.textContent = `${val.toFixed(1)}x`;
-    updateSettings({ sensitivity: val });
-  });
+      const actionSpan = document.createElement('span');
+      actionSpan.className = 'command-action';
+      actionSpan.textContent = `→ ${action}`;
 
-  soundCheckbox.addEventListener("change", (e) => {
-    updateSettings({ soundFeedback: e.target.checked });
-  });
+      textWrap.appendChild(phraseSpan);
+      textWrap.appendChild(actionSpan);
 
-  guardCheckbox.addEventListener("change", (e) => {
-    updateSettings({ accidentalGuard: e.target.checked });
-  });
-
-  const openTabBtn = document.getElementById("open-tab-btn");
-
-  openTrackerBtn.addEventListener("click", () => {
-    openTrackerBtn.textContent = "⏳ Opening Tracker...";
-    currentSettings.enabled = true;
-    applyStateToUI();
-
-    // 1. Tell background service worker to update state
-    chrome.runtime.sendMessage({
-      type: "OPEN_TRACKER",
-    }, (res) => {
-      if (res?.state) {
-        currentSettings = { ...currentSettings, ...res.state };
-        applyStateToUI();
-      }
-    });
-
-    // 2. Direct window creation on user gesture for immediate pop-up
-    try {
-      const trackerUrl = chrome.runtime.getURL("tracker.html");
-      chrome.windows.create({
-        url: trackerUrl,
-        type: "popup",
-        width: 400,
-        height: 540,
-        left: 40,
-        top: 60,
-        focused: true,
-      }, (win) => {
-        if (!win && chrome.tabs) {
-          chrome.tabs.create({ url: trackerUrl, active: true });
-        }
-        openTrackerBtn.textContent = "✓ Tracker Active";
-        setTimeout(() => {
-          openTrackerBtn.textContent = "📷 Open Camera & Mic Tracker";
-        }, 2000);
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-del';
+      delBtn.textContent = '✕';
+      delBtn.setAttribute('title', 'Remove command');
+      delBtn.addEventListener('click', () => {
+        delete state.customCommands[phrase];
+        saveAndBroadcast();
+        renderCommandsList();
       });
-    } catch {
-      const trackerUrl = chrome.runtime.getURL("tracker.html");
-      chrome.tabs.create({ url: trackerUrl, active: true });
-      openTrackerBtn.textContent = "✓ Tracker Active";
-      setTimeout(() => {
-        openTrackerBtn.textContent = "📷 Open Camera & Mic Tracker";
-      }, 2000);
-    }
-  });
 
-  openTabBtn?.addEventListener("click", () => {
-    currentSettings.enabled = true;
-    applyStateToUI();
-    chrome.runtime.sendMessage({ type: "UPDATE_SETTINGS", payload: { enabled: true } });
-    const trackerUrl = chrome.runtime.getURL("tracker.html");
-    chrome.tabs.create({ url: trackerUrl, active: true });
-  });
-
-  toggleNumbersBtn.addEventListener("click", () => {
-    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: "HANDSFREE_ACTION",
-          action: "SHOW_NUMBERS",
-        });
-      }
+      item.appendChild(textWrap);
+      item.appendChild(delBtn);
+      commandsList.appendChild(item);
     });
+  }
+
+  function saveAndBroadcast() {
+    chrome.storage.sync.set({
+      voice_nav_enabled: state.enabled,
+      voice_nav_language: state.language,
+      voice_nav_server_url: state.serverUrl,
+      voice_nav_custom_commands: state.customCommands
+    });
+
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach((tab) => {
+        if (tab.id && !tab.url?.startsWith('chrome://')) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'VOICE_NAV_SETTINGS_UPDATED',
+              enabled: state.enabled,
+              language: state.language,
+              customCommands: state.customCommands
+            },
+            () => {
+              if (chrome.runtime.lastError) {}
+            }
+          );
+        }
+      });
+    });
+  }
+
+  enableToggle.addEventListener('change', (e) => {
+    state.enabled = e.target.checked;
+    applyStateToUI();
+    saveAndBroadcast();
+  });
+
+  langSelect.addEventListener('change', (e) => {
+    state.language = e.target.value;
+    saveAndBroadcast();
+  });
+
+  serverUrlInput.addEventListener('change', (e) => {
+    state.serverUrl = e.target.value.trim() || 'http://localhost:3001';
+    saveAndBroadcast();
+  });
+
+  addCmdBtn.addEventListener('click', () => {
+    const phrase = newPhraseInput.value.trim().toLowerCase();
+    const action = newActionSelect.value;
+
+    if (!phrase) return;
+
+    state.customCommands[phrase] = action;
+    newPhraseInput.value = '';
+    renderCommandsList();
+    saveAndBroadcast();
   });
 });
