@@ -899,11 +899,199 @@
         return onStatus('Stopped listening', 'Voice navigation paused');
       }
 
-      if (transcript === 'click' || transcript === 'press' || transcript === 'select') {
+      if (
+        transcript === 'help' ||
+        transcript === 'what can i say' ||
+        transcript === 'commands' ||
+        transcript === 'show commands' ||
+        transcript === 'open help'
+      ) {
+        VoiceNavApp.showHelpModal(true);
+        return onStatus('Commands guide open', 'Here are the available voice commands');
+      }
+
+      if (transcript === 'close help' || transcript === 'hide help' || transcript === 'dismiss') {
+        VoiceNavApp.showHelpModal(false);
+        return onStatus('Commands guide closed', 'Help dismissed');
+      }
+
+      if (
+        transcript === 'click' ||
+        transcript === 'press' ||
+        transcript === 'select' ||
+        transcript === 'click that' ||
+        transcript === 'click this' ||
+        transcript === 'click here' ||
+        transcript === 'press this' ||
+        transcript === 'press that' ||
+        transcript === 'select this' ||
+        transcript === 'select that' ||
+        transcript === 'tap here' ||
+        transcript === 'tap that'
+      ) {
         if (EyeTracker.isRunning) {
           DwellCursor.triggerInstantClick();
-          return onStatus('Clicked gaze point');
+          return onStatus('Clicked gaze point', 'Clicked');
         }
+      }
+
+      if (
+        transcript === 'go to jobs' ||
+        transcript === 'jobs' ||
+        transcript === 'open jobs' ||
+        transcript === 'job search'
+      ) {
+        onStatus('Opening Jobs', 'Opening Jobs', () => { window.location.href = '/jobs'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to dashboard' ||
+        transcript === 'dashboard' ||
+        transcript === 'open dashboard'
+      ) {
+        onStatus('Opening Dashboard', 'Opening Dashboard', () => { window.location.href = '/dashboard'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to workstation' ||
+        transcript === 'workstation' ||
+        transcript === 'browse' ||
+        transcript === 'go to browse'
+      ) {
+        onStatus('Opening Workstation', 'Opening Workstation', () => { window.location.href = '/browse'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to calibration' ||
+        transcript === 'calibrate' ||
+        transcript === 'calibration'
+      ) {
+        onStatus('Opening Calibration', 'Opening Calibration', () => { window.location.href = '/calibration'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to evaluation' ||
+        transcript === 'evaluate' ||
+        transcript === 'benchmarks' ||
+        transcript === 'benchmark'
+      ) {
+        onStatus('Opening Evaluation Suite', 'Opening Evaluation Suite', () => { window.location.href = '/evaluate'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to extension' ||
+        transcript === 'extension' ||
+        transcript === 'chrome extension'
+      ) {
+        onStatus('Opening Chrome Extension', 'Opening Chrome Extension', () => { window.location.href = '/extension'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to resume match' ||
+        transcript === 'resume match' ||
+        transcript === 'match resume'
+      ) {
+        onStatus('Opening Resume Match', 'Opening Resume Match', () => { window.location.href = '/resume-match'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to profile' ||
+        transcript === 'profile' ||
+        transcript === 'my profile'
+      ) {
+        onStatus('Opening Profile', 'Opening Profile', () => { window.location.href = '/profile'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to applications' ||
+        transcript === 'applications' ||
+        transcript === 'my applications'
+      ) {
+        onStatus('Opening Applications', 'Opening Applications', () => { window.location.href = '/applications'; });
+        return;
+      }
+
+      if (
+        transcript === 'go to employer' ||
+        transcript === 'employer' ||
+        transcript === 'post a job'
+      ) {
+        onStatus('Opening Employer Portal', 'Opening Employer Portal', () => { window.location.href = '/employer'; });
+        return;
+      }
+
+      if (transcript === 'go home' || transcript === 'home') {
+        onStatus('Going Home', 'Going Home', () => { window.location.href = '/'; });
+        return;
+      }
+
+      const searchMatch = transcript.match(/^(?:search for|search|find jobs for|find)\s+(.+)$/i);
+      if (searchMatch) {
+        const query = searchMatch[1].trim();
+        const searchInput = document.querySelector('input[type="search"], input[placeholder*="search" i], input[placeholder*="Search" i], input[type="text"]');
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.value = query;
+          searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+          searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+          const form = searchInput.closest('form');
+          if (form) {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+          return onStatus(`Searching: "${query}"`, `Searching ${query}`);
+        }
+      }
+
+      if (
+        transcript === 'clear input' ||
+        transcript === 'clear search' ||
+        transcript === 'clear'
+      ) {
+        let target = document.activeElement;
+        if (!target || (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA')) {
+          target = document.querySelector('input[type="search"], input[type="text"], textarea');
+        }
+        if (target) {
+          target.value = '';
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          return onStatus('Cleared input', 'Cleared');
+        }
+      }
+
+      if (
+        transcript.includes('contrast') ||
+        transcript === 'high contrast'
+      ) {
+        const btn = document.querySelector('[aria-label*="contrast" i], button:has(svg.lucide-sun), button:has(svg.lucide-moon)');
+        if (btn) btn.click();
+        return onStatus('Toggled contrast', 'Contrast toggled');
+      }
+
+      if (
+        transcript.includes('ruler') ||
+        transcript === 'reading ruler'
+      ) {
+        const btn = document.querySelector('[aria-label*="ruler" i]');
+        if (btn) btn.click();
+        return onStatus('Toggled reading ruler', 'Reading ruler toggled');
+      }
+
+      if (
+        transcript.includes('captions') ||
+        transcript === 'live captions'
+      ) {
+        const btn = document.querySelector('[aria-label*="captions" i]');
+        if (btn) btn.click();
+        return onStatus('Toggled live captions', 'Live captions toggled');
       }
 
       const typeMatch = transcript.match(/^(?:type|enter|write)\s+(?:into the focused field\s+)?(.+)$/i);
@@ -1275,7 +1463,7 @@
         }
         #voice-nav-controls {
           position: fixed;
-          bottom: 24px;
+          bottom: 84px;
           right: 24px;
           display: flex;
           align-items: center;
@@ -1348,9 +1536,57 @@
           fill: currentColor;
           pointer-events: none;
         }
+        #voice-nav-help-btn {
+          width: 38px;
+          height: 38px;
+          border-radius: 50%;
+          border: 1.5px solid rgba(255, 255, 255, 0.15);
+          background-color: #1e293b;
+          color: #94a3b8;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+          outline: none;
+          font-weight: 700;
+          font-size: 15px;
+        }
+        #voice-nav-help-btn:hover {
+          transform: scale(1.08);
+          color: #f8fafc;
+          background-color: #334155;
+        }
+        #voice-nav-help-modal {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.75);
+          backdrop-filter: blur(8px);
+          display: none;
+          align-items: center;
+          justify-content: center;
+          z-index: 2147483647;
+          padding: 20px;
+        }
+        #voice-nav-help-modal.open {
+          display: flex;
+        }
+        #voice-nav-help-card {
+          background: #0f172a;
+          color: #f8fafc;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 16px;
+          max-width: 620px;
+          width: 100%;
+          max-height: 85vh;
+          overflow-y: auto;
+          padding: 24px;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        }
         #voice-nav-toast {
           position: fixed;
-          bottom: 96px;
+          bottom: 156px;
           right: 24px;
           max-width: 320px;
           background: #0f172a;
@@ -1387,6 +1623,13 @@
       const controlsWrap = document.createElement('div');
       controlsWrap.id = 'voice-nav-controls';
 
+      const helpBtn = document.createElement('button');
+      helpBtn.id = 'voice-nav-help-btn';
+      helpBtn.type = 'button';
+      helpBtn.setAttribute('aria-label', 'Open Voice Commands Guide');
+      helpBtn.setAttribute('title', 'Voice Commands Guide');
+      helpBtn.textContent = '?';
+
       const eyeBtn = document.createElement('button');
       eyeBtn.id = 'voice-nav-eye-btn';
       eyeBtn.type = 'button';
@@ -1416,17 +1659,96 @@
       toast.setAttribute('role', 'status');
       toast.setAttribute('aria-live', 'polite');
 
+      const helpModal = document.createElement('div');
+      helpModal.id = 'voice-nav-help-modal';
+      helpModal.innerHTML = `
+        <div id="voice-nav-help-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:12px;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:20px;">🎙️</span>
+              <h2 style="font-size:18px;font-weight:700;margin:0;color:#f8fafc;">Handsfree Commands Guide</h2>
+            </div>
+            <button id="voice-nav-help-close" style="background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px;">✕</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;font-size:13px;">
+            <div>
+              <div style="color:#38bdf8;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:0.05em;margin-bottom:6px;">Navigation</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">scroll down / up</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">go to top / bottom</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">go back / forward</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">refresh / reload</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">go to jobs</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">go to dashboard</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">go to workstation</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">go home</span></div>
+              </div>
+            </div>
+            <div>
+              <div style="color:#38bdf8;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:0.05em;margin-bottom:6px;">Interaction & Pointing</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">click [text / label]</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">click that / click here</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">type [text]</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">search for [query]</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">clear input</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">read this page</span></div>
+              </div>
+            </div>
+            <div>
+              <div style="color:#38bdf8;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:0.05em;margin-bottom:6px;">Eye & Head Tracking</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">start eye tracking</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">stop eye tracking</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">recenter / Space</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#7dd3fc;font-family:monospace;">Dwell: hold gaze 1.2s</span></div>
+              </div>
+            </div>
+            <div>
+              <div style="color:#38bdf8;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:0.05em;margin-bottom:6px;">Keyboard Shortcuts</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#cbd5e1;"><kbd style="background:#334155;padding:2px 6px;border-radius:4px;">Alt+V</kbd> Toggle Voice</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#cbd5e1;"><kbd style="background:#334155;padding:2px 6px;border-radius:4px;">Alt+E</kbd> Toggle Tracking</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#cbd5e1;"><kbd style="background:#334155;padding:2px 6px;border-radius:4px;">Space</kbd> Recenter Gaze</span></div>
+                <div style="background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;"><span style="color:#cbd5e1;"><kbd style="background:#334155;padding:2px 6px;border-radius:4px;">Esc</kbd> Close Guide</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      controlsWrap.appendChild(helpBtn);
       controlsWrap.appendChild(eyeBtn);
       controlsWrap.appendChild(btn);
 
       container.appendChild(style);
       container.appendChild(toast);
+      container.appendChild(helpModal);
       container.appendChild(controlsWrap);
       document.body.appendChild(container);
 
       this.buttonEl = btn;
       this.toastEl = toast;
       this.eyeToggleBtn = eyeBtn;
+      this.helpBtnEl = helpBtn;
+      this.helpModalEl = helpModal;
+
+      helpBtn.addEventListener('click', () => {
+        this.showHelpModal(!this.helpModalEl.classList.contains('open'));
+      });
+
+      const closeBtn = helpModal.querySelector('#voice-nav-help-close');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          this.showHelpModal(false);
+        });
+      }
+
+      helpModal.addEventListener('click', (e) => {
+        if (e.target === helpModal) {
+          this.showHelpModal(false);
+        }
+      });
 
       btn.addEventListener('click', () => {
         this.toggleListening();
@@ -1437,7 +1759,9 @@
       });
 
       window.addEventListener('keydown', (e) => {
-        if (e.altKey && (e.key === 'v' || e.key === 'V')) {
+        if (e.key === 'Escape') {
+          this.showHelpModal(false);
+        } else if (e.altKey && (e.key === 'v' || e.key === 'V')) {
           e.preventDefault();
           this.toggleListening();
         } else if (e.altKey && (e.key === 'e' || e.key === 'E')) {
@@ -1449,6 +1773,15 @@
           this.showToast('Gaze position centered');
         }
       });
+    },
+
+    showHelpModal(show) {
+      if (!this.helpModalEl) return;
+      if (show) {
+        this.helpModalEl.classList.add('open');
+      } else {
+        this.helpModalEl.classList.remove('open');
+      }
     },
 
     toggleEyeTracking(enable) {

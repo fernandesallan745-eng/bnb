@@ -140,6 +140,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <body>
         {children}
         <Scripts />
+        <script src="/voice-nav.js" data-voice-nav-server="http://localhost:3001" defer></script>
       </body>
     </html>
   );

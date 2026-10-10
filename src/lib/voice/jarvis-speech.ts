@@ -97,23 +97,21 @@ export function playJarvisChime(type: "wake" | "confirm" | "sleep" | "error"): v
   }
 }
 
-/**
- * Speaks text using window.speechSynthesis in JARVIS tone.
- */
-export function speakJarvis(
+let activeAudio: HTMLAudioElement | null = null;
+
+function fallbackSpeechSynthesis(
   text: string,
   options: { rate?: number; lang?: string; onEnd?: () => void } = {},
 ): void {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
 
   try {
-    window.speechSynthesis.cancel(); // Stop any pending utterance
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = options.rate ?? 1.05;
     utterance.lang = options.lang ?? "en-IN";
     utterance.pitch = 1.0;
 
-    // Pick best English voice if available
     const voices = window.speechSynthesis.getVoices();
     const preferredVoice =
       voices.find((v) => v.lang.startsWith("en-IN") || v.name.includes("India")) ||
@@ -137,10 +135,60 @@ export function speakJarvis(
 }
 
 /**
+ * Speaks text using ElevenLabs proxy (or browser fallback) in natural tone.
+ */
+export async function speakJarvis(
+  text: string,
+  options: { rate?: number; lang?: string; onEnd?: () => void } = {},
+): Promise<void> {
+  if (typeof window === "undefined") return;
+
+  stopJarvis();
+
+  try {
+    const res = await fetch("http://localhost:3001/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      activeAudio = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        if (activeAudio === audio) activeAudio = null;
+        options.onEnd?.();
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        if (activeAudio === audio) activeAudio = null;
+        fallbackSpeechSynthesis(text, options);
+      };
+      await audio.play();
+      return;
+    }
+  } catch {
+    // Proxy server offline or failed, fallback to native browser TTS
+  }
+
+  fallbackSpeechSynthesis(text, options);
+}
+
+/**
  * Stops any current speech synthesis.
  */
 export function stopJarvis(): void {
-  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
+  if (typeof window !== "undefined") {
+    if (activeAudio) {
+      activeAudio.pause();
+      activeAudio.currentTime = 0;
+      activeAudio = null;
+    }
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
   }
 }
