@@ -33,14 +33,14 @@ const args = [
   `--load-extension=${extensionDir}`,
   '--no-first-run',
   '--no-default-browser-check',
-  'http://localhost:8080/extension',
+  'http://localhost:8080/demo.html',
   'https://www.google.com',
 ];
 
-console.log('🚀 Starting Handsfree Extension in Chromium...');
+console.log('🚀 Starting Voice Navigation & Eye Tracking Extension in Chromium...');
 console.log(`📁 Extension Path: ${extensionDir}`);
 console.log(`🌐 Browser: ${chromePath}`);
-console.log('✨ Opened tabs: Handsfree Hub (http://localhost:8080/extension) & Google Search');
+console.log('✨ Opened tabs: Demo Page (http://localhost:8080/demo.html) & Google Search');
 
 const child = spawn(chromePath, args, {
   detached: true,

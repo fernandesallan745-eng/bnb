@@ -38,6 +38,7 @@ function rateLimiter(req, res, next) {
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+app.use('/client', express.static(path.resolve(__dirname, '../client')));
 app.use(rateLimiter);
 
 app.get('/health', (req, res) => {
