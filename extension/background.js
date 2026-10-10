@@ -83,6 +83,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // 3b. Explicit Open Tracker Action
+  if (request.type === "OPEN_TRACKER") {
+    state.enabled = true;
+    chrome.storage.local.set({ handsfree_settings: state });
+    broadcastToTabs({ type: "HANDSFREE_STATE_CHANGED", state });
+    openTrackerWindow();
+    sendResponse({ success: true, state });
+    return true;
+  }
+
   // 4. Coordinates / Telemetry from Tracker Window -> Active Tab
   if (request.type === "TRACKER_CURSOR_UPDATE") {
     if (state.enabled) {
@@ -122,13 +132,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// Track when tracker window is closed by user
+chrome.windows?.onRemoved?.addListener((winId) => {
+  if (winId === state.trackerWindowId) {
+    state.trackerWindowId = null;
+  }
+});
+
 // Helper: Open tracker window (compact floating companion window with webcam & mic)
 async function openTrackerWindow() {
+  const trackerUrl = chrome.runtime.getURL("tracker.html");
+
   if (state.trackerWindowId) {
     try {
       const existing = await chrome.windows.get(state.trackerWindowId);
       if (existing) {
-        chrome.windows.update(state.trackerWindowId, { focused: false });
+        await chrome.windows.update(state.trackerWindowId, {
+          focused: true,
+          drawAttention: true,
+        });
         return;
       }
     } catch {
@@ -136,23 +158,30 @@ async function openTrackerWindow() {
     }
   }
 
-  const trackerUrl = chrome.runtime.getURL("tracker.html");
-  chrome.windows.create(
-    {
-      url: trackerUrl,
-      type: "popup",
-      width: 380,
-      height: 480,
-      left: 20,
-      top: 40,
-      focused: false,
-    },
-    (win) => {
-      if (win?.id) {
-        state.trackerWindowId = win.id;
-      }
-    },
-  );
+  try {
+    chrome.windows.create(
+      {
+        url: trackerUrl,
+        type: "popup",
+        width: 400,
+        height: 540,
+        left: 40,
+        top: 60,
+        focused: true,
+      },
+      (win) => {
+        if (chrome.runtime.lastError || !win) {
+          console.warn("Could not create popup window, opening in tab instead:", chrome.runtime.lastError);
+          chrome.tabs.create({ url: trackerUrl, active: true });
+        } else {
+          state.trackerWindowId = win.id;
+        }
+      },
+    );
+  } catch (err) {
+    console.warn("chrome.windows.create threw error, falling back to tab:", err);
+    chrome.tabs.create({ url: trackerUrl, active: true });
+  }
 }
 
 function closeTrackerWindow() {

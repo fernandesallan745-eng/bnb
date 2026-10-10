@@ -105,11 +105,59 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSettings({ accidentalGuard: e.target.checked });
   });
 
+  const openTabBtn = document.getElementById("open-tab-btn");
+
   openTrackerBtn.addEventListener("click", () => {
+    openTrackerBtn.textContent = "⏳ Opening Tracker...";
+    currentSettings.enabled = true;
+    applyStateToUI();
+
+    // 1. Tell background service worker to update state
     chrome.runtime.sendMessage({
-      type: "TOGGLE_HANDSFREE",
-      payload: true,
+      type: "OPEN_TRACKER",
+    }, (res) => {
+      if (res?.state) {
+        currentSettings = { ...currentSettings, ...res.state };
+        applyStateToUI();
+      }
     });
+
+    // 2. Direct window creation on user gesture for immediate pop-up
+    try {
+      const trackerUrl = chrome.runtime.getURL("tracker.html");
+      chrome.windows.create({
+        url: trackerUrl,
+        type: "popup",
+        width: 400,
+        height: 540,
+        left: 40,
+        top: 60,
+        focused: true,
+      }, (win) => {
+        if (!win && chrome.tabs) {
+          chrome.tabs.create({ url: trackerUrl, active: true });
+        }
+        openTrackerBtn.textContent = "✓ Tracker Active";
+        setTimeout(() => {
+          openTrackerBtn.textContent = "📷 Open Camera & Mic Tracker";
+        }, 2000);
+      });
+    } catch {
+      const trackerUrl = chrome.runtime.getURL("tracker.html");
+      chrome.tabs.create({ url: trackerUrl, active: true });
+      openTrackerBtn.textContent = "✓ Tracker Active";
+      setTimeout(() => {
+        openTrackerBtn.textContent = "📷 Open Camera & Mic Tracker";
+      }, 2000);
+    }
+  });
+
+  openTabBtn?.addEventListener("click", () => {
+    currentSettings.enabled = true;
+    applyStateToUI();
+    chrome.runtime.sendMessage({ type: "UPDATE_SETTINGS", payload: { enabled: true } });
+    const trackerUrl = chrome.runtime.getURL("tracker.html");
+    chrome.tabs.create({ url: trackerUrl, active: true });
   });
 
   toggleNumbersBtn.addEventListener("click", () => {

@@ -12,6 +12,8 @@
   const activeModeEl = document.getElementById("active-mode");
   const recenterBtn = document.getElementById("recenter-btn");
   const pauseBtn = document.getElementById("pause-btn");
+  const permOverlay = document.getElementById("perm-overlay");
+  const grantPermBtn = document.getElementById("grant-perm-btn");
 
   let stream = null;
   let isRunning = true;
@@ -46,6 +48,7 @@
   // 1. Camera Initialization
   async function initCamera() {
     try {
+      if (permOverlay) permOverlay.style.display = "none";
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 320 },
@@ -60,13 +63,22 @@
       canvas.width = video.videoWidth || 320;
       canvas.height = video.videoHeight || 240;
 
+      lightingBadge.textContent = "Lighting: Optimal";
+      lightingBadge.style.color = "#7bd3c2";
+
       requestAnimationFrame(processFrame);
     } catch (err) {
-      console.error("Camera access error:", err);
-      lightingBadge.textContent = "Camera Error / Blocked";
-      lightingBadge.style.color = "#f87171";
+      console.warn("Camera access error:", err);
+      if (permOverlay) permOverlay.style.display = "flex";
+      lightingBadge.textContent = "Camera Permission Needed";
+      lightingBadge.style.color = "#fbbf24";
     }
   }
+
+  grantPermBtn?.addEventListener("click", () => {
+    initCamera();
+    initSpeech();
+  });
 
   // 2. Head Motion Analysis (High-performance Optical Centroid Tracker)
   let prevFrameData = null;

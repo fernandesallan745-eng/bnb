@@ -19,7 +19,19 @@
       <video id="tracker-video" autoplay playsinline muted></video>
       <canvas id="tracker-canvas"></canvas>
       <div class="crosshair"></div>
-      <div class="lighting-badge" id="lighting-badge">Lighting: Optimal</div>
+      <div class="lighting-badge" id="lighting-badge">Lighting: Initializing...</div>
+
+      <!-- Permission Banner Overlay -->
+      <div id="perm-overlay" class="perm-overlay" style="display: none;">
+        <div class="perm-card">
+          <span class="perm-icon">📷</span>
+          <h3 class="perm-title">Camera Permission Needed</h3>
+          <p class="perm-desc">Click below to allow camera &amp; speech access for handsfree tracking.</p>
+          <button type="button" id="grant-perm-btn" class="btn btn-grant">
+            Enable Camera &amp; Mic
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Speech & Action HUD -->
