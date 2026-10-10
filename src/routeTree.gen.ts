@@ -10,14 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApplicationsRouteImport } from './routes/applications'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as CalibrationRouteImport } from './routes/calibration'
-import { Route as EvaluateRouteImport } from './routes/evaluate'
-import { Route as ExtensionRouteImport } from './routes/extension'
-import { Route as ApplicationsRouteImport } from './routes/applications'
 import { Route as CareerGpsRouteImport } from './routes/career-gps'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as EmployerRouteImport } from './routes/employer'
+import { Route as EvaluateRouteImport } from './routes/evaluate'
+import { Route as ExtensionRouteImport } from './routes/extension'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -33,6 +33,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApplicationsRoute = ApplicationsRouteImport.update({
+  id: '/applications',
+  path: '/applications',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BrowseRoute = BrowseRouteImport.update({
   id: '/browse',
   path: '/browse',
@@ -41,21 +46,6 @@ const BrowseRoute = BrowseRouteImport.update({
 const CalibrationRoute = CalibrationRouteImport.update({
   id: '/calibration',
   path: '/calibration',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EvaluateRoute = EvaluateRouteImport.update({
-  id: '/evaluate',
-  path: '/evaluate',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ExtensionRoute = ExtensionRouteImport.update({
-  id: '/extension',
-  path: '/extension',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApplicationsRoute = ApplicationsRouteImport.update({
-  id: '/applications',
-  path: '/applications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CareerGpsRoute = CareerGpsRouteImport.update({
@@ -71,6 +61,16 @@ const DashboardRoute = DashboardRouteImport.update({
 const EmployerRoute = EmployerRouteImport.update({
   id: '/employer',
   path: '/employer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EvaluateRoute = EvaluateRouteImport.update({
+  id: '/evaluate',
+  path: '/evaluate',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExtensionRoute = ExtensionRouteImport.update({
+  id: '/extension',
+  path: '/extension',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -121,14 +121,14 @@ const JobsJobIdRoute = JobsJobIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/applications': typeof ApplicationsRoute
   '/browse': typeof BrowseRoute
   '/calibration': typeof CalibrationRoute
-  '/evaluate': typeof EvaluateRoute
-  '/extension': typeof ExtensionRoute
-  '/applications': typeof ApplicationsRoute
   '/career-gps': typeof CareerGpsRoute
   '/dashboard': typeof DashboardRoute
   '/employer': typeof EmployerRoute
+  '/evaluate': typeof EvaluateRoute
+  '/extension': typeof ExtensionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
@@ -141,14 +141,14 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/applications': typeof ApplicationsRoute
   '/browse': typeof BrowseRoute
   '/calibration': typeof CalibrationRoute
-  '/evaluate': typeof EvaluateRoute
-  '/extension': typeof ExtensionRoute
-  '/applications': typeof ApplicationsRoute
   '/career-gps': typeof CareerGpsRoute
   '/dashboard': typeof DashboardRoute
   '/employer': typeof EmployerRoute
+  '/evaluate': typeof EvaluateRoute
+  '/extension': typeof ExtensionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
@@ -162,14 +162,14 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/applications': typeof ApplicationsRoute
   '/browse': typeof BrowseRoute
   '/calibration': typeof CalibrationRoute
-  '/evaluate': typeof EvaluateRoute
-  '/extension': typeof ExtensionRoute
-  '/applications': typeof ApplicationsRoute
   '/career-gps': typeof CareerGpsRoute
   '/dashboard': typeof DashboardRoute
   '/employer': typeof EmployerRoute
+  '/evaluate': typeof EvaluateRoute
+  '/extension': typeof ExtensionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
@@ -184,14 +184,14 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/applications'
     | '/browse'
     | '/calibration'
-    | '/evaluate'
-    | '/extension'
-    | '/applications'
     | '/career-gps'
     | '/dashboard'
     | '/employer'
+    | '/evaluate'
+    | '/extension'
     | '/login'
     | '/privacy'
     | '/profile'
@@ -204,14 +204,14 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/applications'
     | '/browse'
     | '/calibration'
-    | '/evaluate'
-    | '/extension'
-    | '/applications'
     | '/career-gps'
     | '/dashboard'
     | '/employer'
+    | '/evaluate'
+    | '/extension'
     | '/login'
     | '/privacy'
     | '/profile'
@@ -224,14 +224,14 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/applications'
     | '/browse'
     | '/calibration'
-    | '/evaluate'
-    | '/extension'
-    | '/applications'
     | '/career-gps'
     | '/dashboard'
     | '/employer'
+    | '/evaluate'
+    | '/extension'
     | '/login'
     | '/privacy'
     | '/profile'
@@ -245,14 +245,14 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApplicationsRoute: typeof ApplicationsRoute
   BrowseRoute: typeof BrowseRoute
   CalibrationRoute: typeof CalibrationRoute
-  EvaluateRoute: typeof EvaluateRoute
-  ExtensionRoute: typeof ExtensionRoute
-  ApplicationsRoute: typeof ApplicationsRoute
   CareerGpsRoute: typeof CareerGpsRoute
   DashboardRoute: typeof DashboardRoute
   EmployerRoute: typeof EmployerRoute
+  EvaluateRoute: typeof EvaluateRoute
+  ExtensionRoute: typeof ExtensionRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
@@ -273,6 +273,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/applications': {
+      id: '/applications'
+      path: '/applications'
+      fullPath: '/applications'
+      preLoaderRoute: typeof ApplicationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/browse': {
       id: '/browse'
       path: '/browse'
@@ -285,27 +292,6 @@ declare module '@tanstack/react-router' {
       path: '/calibration'
       fullPath: '/calibration'
       preLoaderRoute: typeof CalibrationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/evaluate': {
-      id: '/evaluate'
-      path: '/evaluate'
-      fullPath: '/evaluate'
-      preLoaderRoute: typeof EvaluateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/extension': {
-      id: '/extension'
-      path: '/extension'
-      fullPath: '/extension'
-      preLoaderRoute: typeof ExtensionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/applications': {
-      id: '/applications'
-      path: '/applications'
-      fullPath: '/applications'
-      preLoaderRoute: typeof ApplicationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/career-gps': {
@@ -327,6 +313,20 @@ declare module '@tanstack/react-router' {
       path: '/employer'
       fullPath: '/employer'
       preLoaderRoute: typeof EmployerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/evaluate': {
+      id: '/evaluate'
+      path: '/evaluate'
+      fullPath: '/evaluate'
+      preLoaderRoute: typeof EvaluateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/extension': {
+      id: '/extension'
+      path: '/extension'
+      fullPath: '/extension'
+      preLoaderRoute: typeof ExtensionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -397,14 +397,14 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApplicationsRoute: ApplicationsRoute,
   BrowseRoute: BrowseRoute,
   CalibrationRoute: CalibrationRoute,
-  EvaluateRoute: EvaluateRoute,
-  ExtensionRoute: ExtensionRoute,
-  ApplicationsRoute: ApplicationsRoute,
   CareerGpsRoute: CareerGpsRoute,
   DashboardRoute: DashboardRoute,
   EmployerRoute: EmployerRoute,
+  EvaluateRoute: EvaluateRoute,
+  ExtensionRoute: ExtensionRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
