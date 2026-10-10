@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   const enableToggle = document.getElementById('enable-toggle');
+  const eyeToggle = document.getElementById('eye-toggle');
   const langSelect = document.getElementById('lang-select');
   const serverUrlInput = document.getElementById('server-url-input');
   const statusBadge = document.getElementById('status-badge');
@@ -10,16 +11,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let state = {
     enabled: false,
+    eyetracking: false,
     language: 'en',
     serverUrl: 'http://localhost:3001',
     customCommands: {}
   };
 
   chrome.storage.sync.get(
-    ['voice_nav_enabled', 'voice_nav_language', 'voice_nav_server_url', 'voice_nav_custom_commands'],
+    [
+      'voice_nav_enabled',
+      'voice_nav_eyetracking',
+      'voice_nav_language',
+      'voice_nav_server_url',
+      'voice_nav_custom_commands'
+    ],
     (res) => {
       if (res) {
         state.enabled = Boolean(res.voice_nav_enabled);
+        state.eyetracking = Boolean(res.voice_nav_eyetracking);
         state.language = res.voice_nav_language || 'en';
         state.serverUrl = res.voice_nav_server_url || 'http://localhost:3001';
         state.customCommands = res.voice_nav_custom_commands || {};
@@ -30,10 +39,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applyStateToUI() {
     enableToggle.checked = state.enabled;
+    eyeToggle.checked = state.eyetracking;
     langSelect.value = state.language;
     serverUrlInput.value = state.serverUrl;
 
-    if (state.enabled) {
+    if (state.enabled || state.eyetracking) {
       statusBadge.textContent = 'Active';
       statusBadge.className = 'status-badge active';
     } else {
@@ -93,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function saveAndBroadcast() {
     chrome.storage.sync.set({
       voice_nav_enabled: state.enabled,
+      voice_nav_eyetracking: state.eyetracking,
       voice_nav_language: state.language,
       voice_nav_server_url: state.serverUrl,
       voice_nav_custom_commands: state.customCommands
@@ -106,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
             {
               type: 'VOICE_NAV_SETTINGS_UPDATED',
               enabled: state.enabled,
+              eyetracking: state.eyetracking,
               language: state.language,
               customCommands: state.customCommands
             },
@@ -120,6 +132,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   enableToggle.addEventListener('change', (e) => {
     state.enabled = e.target.checked;
+    applyStateToUI();
+    saveAndBroadcast();
+  });
+
+  eyeToggle.addEventListener('change', (e) => {
+    state.eyetracking = e.target.checked;
     applyStateToUI();
     saveAndBroadcast();
   });

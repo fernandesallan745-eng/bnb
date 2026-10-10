@@ -197,6 +197,438 @@
     }
   };
 
+  const DwellCursor = {
+    cursorContainer: null,
+    cursorEl: null,
+    meterEl: null,
+    pipEl: null,
+    audioCtx: null,
+
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2,
+    targetX: window.innerWidth / 2,
+    targetY: window.innerHeight / 2,
+    dwellStartTime: 0,
+    dwellAnchorX: 0,
+    dwellAnchorY: 0,
+    dwellRadius: 28,
+    dwellDelayMs: 1200,
+    lastClickTime: 0,
+    isEnabled: false,
+    animFrameId: null,
+
+    init() {
+      if (document.getElementById('voice-nav-cursor-root')) return;
+
+      const root = document.createElement('div');
+      root.id = 'voice-nav-cursor-root';
+      root.style.all = 'initial';
+
+      const style = document.createElement('style');
+      style.textContent = `
+        #voice-nav-cursor-box {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          pointer-events: none;
+          z-index: 2147483640;
+          display: none;
+        }
+        #voice-nav-cursor-box.active {
+          display: block;
+        }
+        #voice-nav-virtual-pointer {
+          position: absolute;
+          width: 36px;
+          height: 36px;
+          transform: translate(-50%, -50%);
+          pointer-events: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.04s ease-out;
+        }
+        .voice-nav-pointer-center {
+          width: 12px;
+          height: 12px;
+          background: #38bdf8;
+          border: 2px solid #0f172a;
+          border-radius: 50%;
+          box-shadow: 0 0 10px rgba(56, 189, 248, 0.9), 0 0 3px rgba(0, 0, 0, 0.8);
+          position: absolute;
+        }
+        .voice-nav-pointer-meter {
+          width: 38px;
+          height: 38px;
+          transform: rotate(-90deg);
+        }
+        .voice-nav-meter-bg {
+          fill: none;
+          stroke: rgba(15, 23, 42, 0.6);
+          stroke-width: 3.5;
+        }
+        .voice-nav-meter-fill {
+          fill: none;
+          stroke: #38bdf8;
+          stroke-width: 3.5;
+          stroke-linecap: round;
+          stroke-dasharray: 100;
+          stroke-dashoffset: 100;
+        }
+        .voice-nav-click-ripple {
+          position: absolute;
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          border: 2px solid #38bdf8;
+          transform: translate(-50%, -50%) scale(0.2);
+          opacity: 1;
+          pointer-events: none;
+          animation: voiceNavRipple 0.5s ease-out forwards;
+        }
+        @keyframes voiceNavRipple {
+          to {
+            transform: translate(-50%, -50%) scale(1.8);
+            opacity: 0;
+          }
+        }
+        #voice-nav-camera-pip {
+          position: fixed;
+          bottom: 24px;
+          left: 24px;
+          width: 140px;
+          height: 105px;
+          background: #090d16;
+          border: 1.5px solid rgba(56, 189, 248, 0.4);
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+          z-index: 2147483645;
+          display: none;
+        }
+        #voice-nav-camera-pip.active {
+          display: block;
+        }
+        #voice-nav-pip-video {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          transform: scaleX(-1);
+          opacity: 0.85;
+        }
+        #voice-nav-pip-canvas {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          transform: scaleX(-1);
+          pointer-events: none;
+        }
+        .voice-nav-pip-badge {
+          position: absolute;
+          bottom: 4px;
+          left: 6px;
+          font-size: 9px;
+          font-weight: 700;
+          background: rgba(15, 23, 42, 0.8);
+          color: #38bdf8;
+          padding: 2px 6px;
+          border-radius: 4px;
+          border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+      `;
+
+      const box = document.createElement('div');
+      box.id = 'voice-nav-cursor-box';
+
+      const pointer = document.createElement('div');
+      pointer.id = 'voice-nav-virtual-pointer';
+      pointer.innerHTML = `
+        <svg class="voice-nav-pointer-meter" viewBox="0 0 36 36">
+          <circle class="voice-nav-meter-bg" cx="18" cy="18" r="15"/>
+          <circle class="voice-nav-meter-fill" id="voice-nav-meter-fill-circle" cx="18" cy="18" r="15" stroke-dasharray="100" stroke-dashoffset="100"/>
+        </svg>
+        <div class="voice-nav-pointer-center"></div>
+      `;
+
+      const pip = document.createElement('div');
+      pip.id = 'voice-nav-camera-pip';
+      pip.innerHTML = `
+        <video id="voice-nav-pip-video" autoplay playsinline muted></video>
+        <canvas id="voice-nav-pip-canvas"></canvas>
+        <span class="voice-nav-pip-badge" id="voice-nav-pip-status">Eye Track: Active</span>
+      `;
+
+      box.appendChild(pointer);
+      root.appendChild(style);
+      root.appendChild(box);
+      root.appendChild(pip);
+      document.body.appendChild(root);
+
+      this.cursorContainer = box;
+      this.cursorEl = pointer;
+      this.meterEl = pointer.querySelector('#voice-nav-meter-fill-circle');
+      this.pipEl = pip;
+
+      this.startLoop();
+    },
+
+    playClickSound() {
+      try {
+        if (!this.audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          this.audioCtx = new AudioContextClass();
+        }
+        if (this.audioCtx.state === 'suspended') {
+          this.audioCtx.resume();
+        }
+        const osc = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, this.audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(440, this.audioCtx.currentTime + 0.06);
+        gain.gain.setValueAtTime(0.18, this.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.06);
+        osc.connect(gain);
+        gain.connect(this.audioCtx.destination);
+        osc.start();
+        osc.stop(this.audioCtx.currentTime + 0.06);
+      } catch (e) {}
+    },
+
+    showRipple(x, y) {
+      const ripple = document.createElement('div');
+      ripple.className = 'voice-nav-click-ripple';
+      ripple.style.left = `${x}px`;
+      ripple.style.top = `${y}px`;
+      this.cursorContainer.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    },
+
+    updateTarget(normX, normY) {
+      const margin = 20;
+      const targetW = window.innerWidth - margin * 2;
+      const targetH = window.innerHeight - margin * 2;
+      this.targetX = margin + Math.max(0, Math.min(1, normX)) * targetW;
+      this.targetY = margin + Math.max(0, Math.min(1, normY)) * targetH;
+    },
+
+    startLoop() {
+      const loop = () => {
+        if (this.isEnabled) {
+          this.x += (this.targetX - this.x) * 0.28;
+          this.y += (this.targetY - this.y) * 0.28;
+
+          this.cursorEl.style.left = `${this.x}px`;
+          this.cursorEl.style.top = `${this.y}px`;
+
+          this.checkDwell();
+        }
+        this.animFrameId = requestAnimationFrame(loop);
+      };
+      this.animFrameId = requestAnimationFrame(loop);
+    },
+
+    checkDwell() {
+      const now = performance.now();
+      if (now - this.lastClickTime < 600) {
+        if (this.meterEl) this.meterEl.style.strokeDashoffset = '100';
+        return;
+      }
+
+      const dist = Math.hypot(this.x - this.dwellAnchorX, this.y - this.dwellAnchorY);
+
+      if (dist > this.dwellRadius) {
+        this.dwellAnchorX = this.x;
+        this.dwellAnchorY = this.y;
+        this.dwellStartTime = now;
+        if (this.meterEl) this.meterEl.style.strokeDashoffset = '100';
+      } else {
+        const elapsed = now - this.dwellStartTime;
+        const progress = Math.min(1, elapsed / this.dwellDelayMs);
+        if (this.meterEl) {
+          this.meterEl.style.strokeDashoffset = `${100 - progress * 100}`;
+        }
+
+        if (progress >= 1) {
+          this.executeDwellClick();
+          this.dwellStartTime = now;
+          this.lastClickTime = now;
+          if (this.meterEl) this.meterEl.style.strokeDashoffset = '100';
+        }
+      }
+    },
+
+    executeDwellClick() {
+      this.playClickSound();
+      this.showRipple(this.x, this.y);
+
+      this.cursorContainer.style.display = 'none';
+      const target = document.elementFromPoint(this.x, this.y);
+      this.cursorContainer.style.display = 'block';
+
+      if (target && !target.closest('#voice-nav-root') && !target.closest('#voice-nav-cursor-root')) {
+        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: this.x, clientY: this.y }));
+        target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: this.x, clientY: this.y }));
+        target.click();
+        if (target.focus) target.focus();
+      }
+    },
+
+    triggerInstantClick() {
+      this.executeDwellClick();
+    },
+
+    setVisible(active) {
+      this.isEnabled = active;
+      if (this.cursorContainer) {
+        this.cursorContainer.className = active ? 'active' : '';
+      }
+      if (this.pipEl) {
+        this.pipEl.className = active ? 'active' : '';
+      }
+    }
+  };
+
+  const EyeTracker = {
+    stream: null,
+    video: null,
+    canvas: null,
+    ctx: null,
+    isRunning: false,
+    sensitivity: 1.5,
+    smoothing: 0.75,
+    anchorX: 0.5,
+    anchorY: 0.5,
+    currNormX: 0.5,
+    currNormY: 0.5,
+    targetNormX: 0.5,
+    targetNormY: 0.5,
+    prevFrameData: null,
+
+    async start(onReady, onError) {
+      DwellCursor.init();
+
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 320 },
+            height: { ideal: 240 },
+            facingMode: 'user'
+          },
+          audio: false
+        });
+
+        this.video = document.getElementById('voice-nav-pip-video');
+        this.canvas = document.getElementById('voice-nav-pip-canvas');
+
+        if (this.video && this.canvas) {
+          this.video.srcObject = this.stream;
+          await this.video.play();
+
+          this.canvas.width = this.video.videoWidth || 320;
+          this.canvas.height = this.video.videoHeight || 240;
+          this.ctx = this.canvas.getContext('2d');
+        }
+
+        this.isRunning = true;
+        DwellCursor.setVisible(true);
+        this.processLoop();
+
+        if (onReady) onReady();
+      } catch (err) {
+        if (onError) onError(err);
+      }
+    },
+
+    recenter() {
+      this.anchorX = this.currNormX;
+      this.anchorY = this.currNormY;
+      this.targetNormX = 0.5;
+      this.targetNormY = 0.5;
+      this.currNormX = 0.5;
+      this.currNormY = 0.5;
+    },
+
+    processLoop() {
+      if (!this.isRunning) return;
+
+      if (this.video && this.video.readyState >= 2 && this.ctx) {
+        this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+        const frame = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const data = frame.data;
+
+        let motionX = 0;
+        let motionY = 0;
+        let motionCount = 0;
+
+        const startX = Math.floor(this.canvas.width * 0.2);
+        const endX = Math.floor(this.canvas.width * 0.8);
+        const startY = Math.floor(this.canvas.height * 0.2);
+        const endY = Math.floor(this.canvas.height * 0.8);
+
+        for (let y = startY; y < endY; y += 4) {
+          for (let x = startX; x < endX; x += 4) {
+            const idx = (y * this.canvas.width + x) * 4;
+            const lum = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+
+            if (this.prevFrameData) {
+              const prevLum =
+                (this.prevFrameData[idx] + this.prevFrameData[idx + 1] + this.prevFrameData[idx + 2]) / 3;
+              const diff = Math.abs(lum - prevLum);
+              if (diff > 16) {
+                motionX += x;
+                motionY += y;
+                motionCount++;
+              }
+            }
+          }
+        }
+
+        if (motionCount > 12) {
+          const detectedX = motionX / motionCount / this.canvas.width;
+          const detectedY = motionY / motionCount / this.canvas.height;
+
+          const dx = (detectedX - this.anchorX) * this.sensitivity;
+          const dy = (detectedY - this.anchorY) * this.sensitivity;
+
+          this.targetNormX = Math.max(0.02, Math.min(0.98, 0.5 + dx * 2.8));
+          this.targetNormY = Math.max(0.02, Math.min(0.98, 0.5 + dy * 2.8));
+        }
+
+        this.currNormX += (this.targetNormX - this.currNormX) * (1 - this.smoothing);
+        this.currNormY += (this.targetNormY - this.currNormY) * (1 - this.smoothing);
+
+        DwellCursor.updateTarget(this.currNormX, this.currNormY);
+
+        this.ctx.beginPath();
+        this.ctx.arc(this.currNormX * this.canvas.width, this.currNormY * this.canvas.height, 8, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#38bdf8';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#0f172a';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        this.prevFrameData = data;
+      }
+
+      requestAnimationFrame(() => this.processLoop());
+    },
+
+    stop() {
+      this.isRunning = false;
+      DwellCursor.setVisible(false);
+
+      if (this.stream) {
+        this.stream.getTracks().forEach((track) => track.stop());
+        this.stream = null;
+      }
+    }
+  };
+
   const DOMActions = {
     elementsCache: [],
 
@@ -211,7 +643,7 @@
       let index = 0;
 
       for (const el of candidates) {
-        if (el.closest('#voice-nav-root')) {
+        if (el.closest('#voice-nav-root') || el.closest('#voice-nav-cursor-root')) {
           continue;
         }
 
@@ -389,6 +821,29 @@
         }
       }
 
+      if (
+        transcript === 'enable eye tracking' ||
+        transcript === 'start eye tracking' ||
+        transcript === 'start tracking'
+      ) {
+        VoiceNavApp.toggleEyeTracking(true);
+        return onStatus('Eye tracking enabled', 'Eye tracking active');
+      }
+
+      if (
+        transcript === 'disable eye tracking' ||
+        transcript === 'stop eye tracking' ||
+        transcript === 'stop tracking'
+      ) {
+        VoiceNavApp.toggleEyeTracking(false);
+        return onStatus('Eye tracking disabled', 'Eye tracking stopped');
+      }
+
+      if (transcript === 'recenter' || transcript === 'center head' || transcript === 'center') {
+        EyeTracker.recenter();
+        return onStatus('Gaze centered', 'Centered');
+      }
+
       if (transcript === 'scroll down' || transcript === 'down' || transcript === 'page down') {
         window.scrollBy({ top: window.innerHeight * 0.7, behavior: 'smooth' });
         return onStatus('Scrolling down', 'Scrolling down');
@@ -442,6 +897,13 @@
       if (transcript === 'stop listening' || transcript === 'stop') {
         VoiceNavApp.stopListening();
         return onStatus('Stopped listening', 'Voice navigation paused');
+      }
+
+      if (transcript === 'click' || transcript === 'press' || transcript === 'select') {
+        if (EyeTracker.isRunning) {
+          DwellCursor.triggerInstantClick();
+          return onStatus('Clicked gaze point');
+        }
       }
 
       const typeMatch = transcript.match(/^(?:type|enter|write)\s+(?:into the focused field\s+)?(.+)$/i);
@@ -722,9 +1184,11 @@
 
   const VoiceNavApp = {
     isEnabled: false,
+    isEyeTrackingEnabled: false,
     language: 'en',
     buttonEl: null,
     toastEl: null,
+    eyeToggleBtn: null,
 
     init() {
       ApiClient.init();
@@ -740,27 +1204,37 @@
         if (storedLang) {
           this.language = storedLang;
         }
+        const storedEye = localStorage.getItem('voice_nav_eyetracking');
+        if (storedEye === 'true') {
+          this.toggleEyeTracking(true);
+        }
       } catch (e) {}
 
       if (ApiClient.isExtension) {
         try {
-          chrome.storage.sync.get(['voice_nav_enabled', 'voice_nav_language', 'voice_nav_custom_commands'], (res) => {
-            if (res) {
-              if (typeof res.voice_nav_enabled === 'boolean') {
-                if (res.voice_nav_enabled && !this.isEnabled) {
-                  this.startListening();
-                } else if (!res.voice_nav_enabled && this.isEnabled) {
-                  this.stopListening();
+          chrome.storage.sync.get(
+            ['voice_nav_enabled', 'voice_nav_language', 'voice_nav_eyetracking', 'voice_nav_custom_commands'],
+            (res) => {
+              if (res) {
+                if (typeof res.voice_nav_enabled === 'boolean') {
+                  if (res.voice_nav_enabled && !this.isEnabled) {
+                    this.startListening();
+                  } else if (!res.voice_nav_enabled && this.isEnabled) {
+                    this.stopListening();
+                  }
+                }
+                if (typeof res.voice_nav_eyetracking === 'boolean') {
+                  this.toggleEyeTracking(res.voice_nav_eyetracking);
+                }
+                if (res.voice_nav_language) {
+                  this.language = res.voice_nav_language;
+                }
+                if (res.voice_nav_custom_commands) {
+                  CommandParser.saveCustomCommands(res.voice_nav_custom_commands);
                 }
               }
-              if (res.voice_nav_language) {
-                this.language = res.voice_nav_language;
-              }
-              if (res.voice_nav_custom_commands) {
-                CommandParser.saveCustomCommands(res.voice_nav_custom_commands);
-              }
             }
-          });
+          );
         } catch (e) {}
       }
     },
@@ -772,6 +1246,9 @@
             if (typeof request.enabled === 'boolean') {
               if (request.enabled) this.startListening();
               else this.stopListening();
+            }
+            if (typeof request.eyetracking === 'boolean') {
+              this.toggleEyeTracking(request.eyetracking);
             }
             if (request.language) {
               this.language = request.language;
@@ -796,10 +1273,16 @@
           box-sizing: border-box;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
-        #voice-nav-btn {
+        #voice-nav-controls {
           position: fixed;
           bottom: 24px;
           right: 24px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          z-index: 2147483647;
+        }
+        #voice-nav-btn {
           width: 58px;
           height: 58px;
           border-radius: 50%;
@@ -811,7 +1294,6 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 2147483647;
           transition: transform 0.2s ease, background-color 0.25s ease, box-shadow 0.25s ease;
           outline: none;
         }
@@ -835,9 +1317,40 @@
           fill: currentColor;
           pointer-events: none;
         }
+        #voice-nav-eye-btn {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          border: 1.5px solid rgba(255, 255, 255, 0.15);
+          background-color: #1e293b;
+          color: #94a3b8;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+          outline: none;
+        }
+        #voice-nav-eye-btn:hover {
+          transform: scale(1.08);
+          color: #f8fafc;
+        }
+        #voice-nav-eye-btn.active {
+          background-color: #0284c7;
+          color: #f8fafc;
+          border-color: #38bdf8;
+          box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+        }
+        #voice-nav-eye-btn svg {
+          width: 20px;
+          height: 20px;
+          fill: currentColor;
+          pointer-events: none;
+        }
         #voice-nav-toast {
           position: fixed;
-          bottom: 92px;
+          bottom: 96px;
           right: 24px;
           max-width: 320px;
           background: #0f172a;
@@ -871,6 +1384,20 @@
         }
       `;
 
+      const controlsWrap = document.createElement('div');
+      controlsWrap.id = 'voice-nav-controls';
+
+      const eyeBtn = document.createElement('button');
+      eyeBtn.id = 'voice-nav-eye-btn';
+      eyeBtn.type = 'button';
+      eyeBtn.setAttribute('aria-label', 'Toggle Eye and Head Tracking');
+      eyeBtn.setAttribute('title', 'Toggle Eye/Head Tracking (Alt+E)');
+      eyeBtn.innerHTML = `
+        <svg viewBox="0 0 24 24">
+          <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+        </svg>
+      `;
+
       const btn = document.createElement('button');
       btn.id = 'voice-nav-btn';
       btn.type = 'button';
@@ -889,24 +1416,70 @@
       toast.setAttribute('role', 'status');
       toast.setAttribute('aria-live', 'polite');
 
+      controlsWrap.appendChild(eyeBtn);
+      controlsWrap.appendChild(btn);
+
       container.appendChild(style);
       container.appendChild(toast);
-      container.appendChild(btn);
+      container.appendChild(controlsWrap);
       document.body.appendChild(container);
 
       this.buttonEl = btn;
       this.toastEl = toast;
+      this.eyeToggleBtn = eyeBtn;
 
       btn.addEventListener('click', () => {
         this.toggleListening();
+      });
+
+      eyeBtn.addEventListener('click', () => {
+        this.toggleEyeTracking(!this.isEyeTrackingEnabled);
       });
 
       window.addEventListener('keydown', (e) => {
         if (e.altKey && (e.key === 'v' || e.key === 'V')) {
           e.preventDefault();
           this.toggleListening();
+        } else if (e.altKey && (e.key === 'e' || e.key === 'E')) {
+          e.preventDefault();
+          this.toggleEyeTracking(!this.isEyeTrackingEnabled);
+        } else if (e.code === 'Space' && this.isEyeTrackingEnabled && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+          e.preventDefault();
+          EyeTracker.recenter();
+          this.showToast('Gaze position centered');
         }
       });
+    },
+
+    toggleEyeTracking(enable) {
+      this.isEyeTrackingEnabled = Boolean(enable);
+
+      if (this.eyeToggleBtn) {
+        if (this.isEyeTrackingEnabled) {
+          this.eyeToggleBtn.classList.add('active');
+        } else {
+          this.eyeToggleBtn.classList.remove('active');
+        }
+      }
+
+      try {
+        localStorage.setItem('voice_nav_eyetracking', String(this.isEyeTrackingEnabled));
+      } catch (e) {}
+
+      if (this.isEyeTrackingEnabled) {
+        EyeTracker.start(
+          () => {
+            this.showToast('Eye & Head Tracking active! Press Space to center.');
+          },
+          (err) => {
+            this.showToast(`Camera error: ${err.message}`);
+            this.toggleEyeTracking(false);
+          }
+        );
+      } else {
+        EyeTracker.stop();
+        this.showToast('Eye tracking stopped');
+      }
     },
 
     setButtonState(state) {

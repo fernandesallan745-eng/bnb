@@ -118,6 +118,9 @@ describe('Voice Navigation Server & Engine Suite', () => {
       if (t === 'go to bottom') return { action: 'scroll', direction: 'bottom' };
       if (t === 'read this page') return { action: 'read' };
       if (t === 'refresh') return { action: 'refresh' };
+      if (t === 'enable eye tracking' || t === 'start eye tracking') return { action: 'eye_tracking', enabled: true };
+      if (t === 'disable eye tracking' || t === 'stop eye tracking') return { action: 'eye_tracking', enabled: false };
+      if (t === 'recenter' || t === 'center') return { action: 'recenter' };
       const clickMatch = t.match(/^(?:click|open|press)\s+(.+)$/i);
       if (clickMatch) return { action: 'click', target: clickMatch[1].trim() };
       const typeMatch = t.match(/^(?:type|enter|write)\s+(?:into the focused field\s+)?(.+)$/i);
@@ -129,6 +132,9 @@ describe('Voice Navigation Server & Engine Suite', () => {
     expect(parse('scroll up')).toEqual({ action: 'scroll', direction: 'up' });
     expect(parse('go to top')).toEqual({ action: 'scroll', direction: 'top' });
     expect(parse('go to bottom')).toEqual({ action: 'scroll', direction: 'bottom' });
+    expect(parse('enable eye tracking')).toEqual({ action: 'eye_tracking', enabled: true });
+    expect(parse('disable eye tracking')).toEqual({ action: 'eye_tracking', enabled: false });
+    expect(parse('recenter')).toEqual({ action: 'recenter' });
     expect(parse('click pricing')).toEqual({ action: 'click', target: 'pricing' });
     expect(parse('open contact')).toEqual({ action: 'click', target: 'contact' });
     expect(parse('type hello into the focused field')).toEqual({ action: 'type', text: 'hello' });
