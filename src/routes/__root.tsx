@@ -91,25 +91,25 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Ableo — The Disability-First Job Platform" },
+      { title: "Handsfree — Voice and Webcam-Based Browsing" },
       {
         name: "description",
         content:
-          "Ableo: Built for People with Disabilities (PwD). Screen-reader accessible, voice-controlled, captioned job matching. Disability accommodation fit scores, accessible career coaching, and privacy-first design.",
+          "Handsfree: Assistive browsing solution that lets users interact with websites using a standard webcam and microphone, without specialized hardware. Head & hand cursor control, voice navigation, and dictation.",
       },
-      { property: "og:title", content: "Ableo — The Disability-First Job Platform" },
+      { property: "og:title", content: "Handsfree — Voice and Webcam-Based Browsing" },
       {
         property: "og:description",
         content:
-          "The job platform built from the ground up for People with Disabilities. Accessible job matching, accommodation transparency, and inclusive career tools.",
+          "Webcam tracking and voice recognition for accessible web interaction. Point with head or hands, navigate with voice commands, and dictate into any search bar.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "Ableo — The Disability-First Job Platform" },
+      { name: "twitter:title", content: "Handsfree — Voice and Webcam-Based Browsing" },
       {
         name: "twitter:description",
         content:
-          "Built for PwD. Accessible job matching, accommodation transparency, and disability-first career tools by Team Arka.",
+          "Webcam tracking and voice recognition for accessible web interaction. Zero specialized hardware required.",
       },
     ],
     links: [
@@ -148,7 +148,14 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isPublicPage = pathname === "/" || pathname === "/login" || pathname === "/privacy";
+  const isPublicPage =
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/privacy" ||
+    pathname === "/browse" ||
+    pathname === "/calibration" ||
+    pathname === "/evaluate" ||
+    pathname === "/extension";
   const requiredRole = pathname.startsWith("/employer") ? "employer" : "candidate";
 
   return (
@@ -158,7 +165,7 @@ function RootComponent() {
           <div className="flex min-h-dvh flex-col bg-background text-foreground">
             <SiteHeader />
             <main id="main" className="flex-1">
-              {/* The public landing page is open to everyone; all tools and portals require an account. */}
+              {/* Handsfree tools, browser, evaluation, and landing are publicly accessible */}
               {isPublicPage ? (
                 <Outlet />
               ) : (

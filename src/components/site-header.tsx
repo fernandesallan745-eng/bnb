@@ -37,17 +37,35 @@ import {
 } from "@/components/ui/sheet";
 
 const PRIMARY_NAV = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/jobs", label: "Jobs" },
-  { to: "/applications", label: "Applications" },
-  { to: "/resume-match", label: "Resume Match" },
-  { to: "/career-gps", label: "Career GPS" },
-  { to: "/saved", label: "Saved" },
+  { to: "/browse", label: "Browser Workstation" },
+  { to: "/calibration", label: "30s Calibration" },
+  { to: "/evaluate", label: "Evaluation Suite" },
+  { to: "/extension", label: "Chrome Extension" },
 ] as const;
 
 export function SiteHeader() {
-  const { savedJobs, theme, toggleTheme, voiceNavConfig, setVoiceNavEnabled } = useAppState();
+  const {
+    savedJobs,
+    theme,
+    toggleTheme,
+    voiceNavConfig,
+    setVoiceNavEnabled,
+    eyeTrackingConfig,
+    setEyeTrackingConfig,
+    gestureConfig,
+    setGestureConfig,
+  } = useAppState();
   const { user, isLoading, logout } = useAuth();
+
+  const isHandsfreeMasterActive =
+    voiceNavConfig.enabled || eyeTrackingConfig.enabled || gestureConfig.enabled;
+
+  const toggleHandsfreeMaster = () => {
+    const next = !isHandsfreeMasterActive;
+    setVoiceNavEnabled(next);
+    setEyeTrackingConfig((c) => ({ ...c, enabled: next }));
+    setGestureConfig((c) => ({ ...c, enabled: next }));
+  };
 
   return (
     <>
@@ -64,22 +82,22 @@ export function SiteHeader() {
             <Link
               to="/"
               className="flex items-center gap-2.5 group"
-              aria-label="Ableo home: Where Ability Meets Opportunity"
+              aria-label="Handsfree: Voice and Webcam-Based Browsing"
             >
               <span className="flex size-9 items-center justify-center rounded-full border border-foreground/80 bg-foreground text-background text-sm font-serif font-bold transition-transform group-hover:scale-105 shadow-xs">
-                Ab
+                Hf
               </span>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
                   <span className="font-serif text-xl font-bold tracking-tight text-foreground leading-none">
-                    Ableo
+                    Handsfree
                   </span>
                   <span className="hidden xl:inline-block rounded-full bg-[#7BD3C2]/30 px-2 py-0.5 text-[10px] font-semibold text-foreground border border-[#7BD3C2]/50">
-                    Disability-First
+                    Webcam + Voice
                   </span>
                 </div>
                 <span className="hidden md:inline-block text-[11px] text-muted-foreground font-sans leading-none mt-1">
-                  Where Ability Meets Opportunity
+                  Assistive Browsing Solution
                 </span>
               </div>
             </Link>
@@ -99,44 +117,39 @@ export function SiteHeader() {
                 }}
               >
                 {item.label}
-                {item.to === "/saved" && savedJobs.length > 0 && (
-                  <span className="ml-1.5 rounded-full bg-[#7BD3C2] text-[#141817] px-1.5 py-0.2 text-[10px] font-bold border border-foreground/30">
-                    {savedJobs.length}
-                  </span>
-                )}
               </Link>
             ))}
           </nav>
 
           {/* Right: Actions, Accessibility, & User Menu */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Quick Hands-Free Voice Control Trigger */}
+            {/* Quick Hands-Free Master Switch Trigger */}
             <button
               type="button"
-              onClick={() => setVoiceNavEnabled(!voiceNavConfig.enabled)}
+              onClick={toggleHandsfreeMaster}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all active:scale-95 whitespace-nowrap ${
-                voiceNavConfig.enabled
+                isHandsfreeMasterActive
                   ? "border-[#191716] bg-[#7BD3C2] text-[#141817] shadow-[1px_1px_0px_#141817] font-semibold"
                   : "border-border bg-secondary/80 text-foreground hover:bg-secondary hover:border-foreground/40"
               }`}
               aria-label={
-                voiceNavConfig.enabled
-                  ? "Turn off hands-free voice control"
-                  : "Turn on hands-free voice control (say Hey Siri, Hey Google, or Hey Janvi)"
+                isHandsfreeMasterActive
+                  ? "Turn off Handsfree Tracking"
+                  : "Turn on Handsfree Tracking (Head, Hand & Voice)"
               }
               title={
-                voiceNavConfig.enabled
-                  ? "Voice Listening Active — say 'Hey Siri' or 'Hey Google'"
-                  : "Turn On Voice Control (say 'Hey Siri' or 'Hey Google')"
+                isHandsfreeMasterActive
+                  ? "Handsfree Active: Head Tracking, Gestures & Voice listening"
+                  : "Turn On Handsfree Tracking (Head, Hand & Voice)"
               }
             >
               <Mic
                 className={`size-3.5 ${
-                  voiceNavConfig.enabled ? "text-[#141817] animate-pulse" : "text-foreground"
+                  isHandsfreeMasterActive ? "text-[#141817] animate-pulse" : "text-foreground"
                 }`}
               />
-              <span className="font-sans font-semibold">Voice</span>
-              {voiceNavConfig.enabled && (
+              <span className="font-sans font-semibold">Handsfree</span>
+              {isHandsfreeMasterActive && (
                 <span className="size-1.5 rounded-full bg-[#141817] animate-ping" />
               )}
             </button>
@@ -341,38 +354,19 @@ export function SiteHeader() {
                   <SheetHeader className="text-left border-b border-border pb-3">
                     <SheetTitle className="font-serif text-lg font-bold flex items-center gap-2">
                       <span className="flex size-7 items-center justify-center rounded-full bg-foreground text-background text-xs font-serif font-bold">
-                        Ab
+                        Hf
                       </span>
-                      Ableo Navigation
+                      Handsfree Menu
                     </SheetTitle>
                   </SheetHeader>
 
                   <nav className="mt-4 flex flex-col gap-1.5" aria-label="Mobile Navigation">
-                    {user && (
-                      <SheetClose asChild>
-                        <Link
-                          to="/profile"
-                          className="flex items-center gap-2.5 rounded-xl border border-brand/40 bg-brand-soft/40 p-3 text-sm font-semibold text-foreground hover:bg-brand-soft transition-colors mb-2"
-                        >
-                          <span className="flex size-8 items-center justify-center rounded-full bg-[#7BD3C2] text-[#141817] font-serif font-bold text-xs">
-                            {user.fullName.charAt(0).toUpperCase()}
-                          </span>
-                          <div className="truncate">
-                            <span className="block font-medium truncate">{user.fullName}</span>
-                            <span className="text-[11px] text-muted-foreground block truncate">
-                              Edit profile &amp; accommodations
-                            </span>
-                          </div>
-                        </Link>
-                      </SheetClose>
-                    )}
-
                     <SheetClose asChild>
                       <Link
                         to="/"
                         className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
                       >
-                        Home
+                        Overview
                       </Link>
                     </SheetClose>
 
@@ -383,25 +377,11 @@ export function SiteHeader() {
                           className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
                         >
                           <span>{item.label}</span>
-                          {item.to === "/saved" && savedJobs.length > 0 && (
-                            <span className="rounded-full bg-[#7BD3C2] text-[#141817] px-1.5 py-0.2 text-[10px] font-bold">
-                              {savedJobs.length}
-                            </span>
-                          )}
                         </Link>
                       </SheetClose>
                     ))}
 
                     <div className="my-2 border-t border-border pt-2 flex flex-col gap-1.5">
-                      <SheetClose asChild>
-                        <Link
-                          to="/employer"
-                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary"
-                        >
-                          <Building2 className="size-4 text-muted-foreground" />
-                          For Employers / Post a job
-                        </Link>
-                      </SheetClose>
                       <SheetClose asChild>
                         <Link
                           to="/privacy"
@@ -411,26 +391,6 @@ export function SiteHeader() {
                           Accessibility &amp; Privacy Guide
                         </Link>
                       </SheetClose>
-
-                      {user ? (
-                        <button
-                          type="button"
-                          onClick={logout}
-                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 text-left mt-2"
-                        >
-                          <LogOut className="size-4" />
-                          Sign out
-                        </button>
-                      ) : (
-                        <SheetClose asChild>
-                          <Link
-                            to="/login"
-                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-primary hover:bg-secondary mt-2"
-                          >
-                            Sign in to Ableo
-                          </Link>
-                        </SheetClose>
-                      )}
                     </div>
                   </nav>
                 </SheetContent>
@@ -451,25 +411,22 @@ export function SiteFooter() {
           <div>
             <div className="flex items-center gap-2">
               <Accessibility className="size-4 text-brand" />
-              <span className="font-display text-base font-bold text-foreground">Ableo</span>
+              <span className="font-display text-base font-bold text-foreground">Handsfree</span>
               <span className="text-xs text-muted-foreground">
-                — The Disability-First Job Platform
+                — Voice &amp; Webcam-Based Browsing
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground max-w-xl">
-              Built for People with Disabilities (PwD). XIE – CSI Student Chapter • Repo Forge •
+              Engineered for People with Physical &amp; Motor Disabilities. XIE – CSI Student Chapter • Repo Forge •
               Team Arka! (Atharva Chaudhari, Allan Fernandes, Saanvi Chamoli, Bhakti Nimaj). Problem
-              Statement #3: Accessible Job Application Assistant.
+              Statement #2: Handsfree: Voice and Webcam-Based Browsing.
             </p>
           </div>
           <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
             <span>♿ WCAG 2.2 AA</span>
-            <span>🔊 Multi-Modal Accessible</span>
-            <span>🔒 Zero Disability Data Inferred</span>
-            <span>🧠 Neurodivergent-Friendly</span>
-            <Link to="/privacy" hash="rights" className="text-brand hover:underline font-medium">
-              🇮🇳 India RPwD Rights Guide
-            </Link>
+            <span>📷 Zero-Hardware Camera Cursor</span>
+            <span>🎤 Continuous Voice Navigation</span>
+            <span>🔒 100% Client-Side Private</span>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs border-t border-border/50 pt-3 text-muted-foreground">

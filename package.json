@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "package:extension": "node scripts/package-extension.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

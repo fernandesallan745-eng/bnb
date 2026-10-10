@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Handsfree Controller</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-dot"></div>
+        <div>
+          <h1 class="title">Handsfree</h1>
+          <p class="subtitle">Voice & Webcam Browsing</p>
+        </div>
+      </div>
+      <div class="status-badge" id="status-badge">Off</div>
+    </header>
+
+    <!-- Master Switch -->
+    <div class="master-toggle-card">
+      <div class="toggle-info">
+        <span class="toggle-label">Enable Handsfree</span>
+        <span class="toggle-desc">Webcam cursor & voice control</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="master-switch">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Mode Selector -->
+    <div class="section">
+      <label class="section-label">Tracking Input Mode</label>
+      <div class="mode-grid">
+        <button type="button" class="mode-btn active" data-mode="hybrid">
+          <span class="mode-icon">✦</span>
+          <span>Hybrid</span>
+        </button>
+        <button type="button" class="mode-btn" data-mode="head">
+          <span class="mode-icon">👤</span>
+          <span>Head / Gaze</span>
+        </button>
+        <button type="button" class="mode-btn" data-mode="hand">
+          <span class="mode-icon">✋</span>
+          <span>Air Cursor</span>
+        </button>
+        <button type="button" class="mode-btn" data-mode="voice">
+          <span class="mode-icon">🎤</span>
+          <span>Voice Only</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="section controls-group">
+      <div class="slider-row">
+        <div class="slider-header">
+          <span>Dwell Click Delay</span>
+          <span class="slider-value" id="dwell-val">1.2s</span>
+        </div>
+        <input type="range" id="dwell-slider" min="600" max="2500" step="100" value="1200">
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-header">
+          <span>Cursor Sensitivity</span>
+          <span class="slider-value" id="sens-val">1.4x</span>
+        </div>
+        <input type="range" id="sens-slider" min="0.6" max="2.5" step="0.1" value="1.4">
+      </div>
+    </div>
+
+    <!-- Toggles -->
+    <div class="section toggles-row">
+      <label class="checkbox-row">
+        <input type="checkbox" id="sound-checkbox" checked>
+        <span>Audio Click Sound</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="guard-checkbox" checked>
+        <span>Accidental Click Guard</span>
+      </label>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions-group">
+      <button type="button" class="btn btn-primary" id="open-tracker-btn">
+        📷 Open Camera & Mic Tracker
+      </button>
+      <button type="button" class="btn btn-secondary" id="toggle-numbers-btn">
+        🔢 Toggle Page Number Tags
+      </button>
+    </div>
+
+    <!-- Footer Links -->
+    <footer class="footer">
+      <a href="http://localhost:3000/calibration" target="_blank" class="footer-link">30s Calibration</a>
+      <span>•</span>
+      <a href="http://localhost:3000/evaluate" target="_blank" class="footer-link">Benchmark Suite</a>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

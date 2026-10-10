@@ -1,90 +1,108 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/♿-Ableo-149187?style=for-the-badge&labelColor=0f172a&color=149187" alt="Ableo" height="40"/>
+<img src="https://img.shields.io/badge/♿-Handsfree-149187?style=for-the-badge&labelColor=0f172a&color=149187" alt="Handsfree" height="40"/>
 
-# Ableo
+# Handsfree: Voice & Webcam-Based Browsing
 
-### AI-Powered Inclusive Career & Employment Platform
+### Problem Statement #2 • Zero-Hardware Assistive Computing Solution
 
-**Find Jobs Without Barriers.**
-
-An accessibility-first job platform for people with disabilities — with
-transparent workplace accommodations, hands-free controls, and explainable AI.
+**Control your cursor with head movements, browse with voice commands, and dictate text into any search bar — on any website.**
 
 <br/>
 
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Chrome Extension](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](./extension)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![Gemini](https://img.shields.io/badge/AI-Google_Gemini-4285F4?style=flat-square&logo=google)](https://ai.google.dev)
-[![MongoDB](https://img.shields.io/badge/Database-MongoDB_Atlas-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
+[![MediaPipe](https://img.shields.io/badge/Computer_Vision-MediaPipe_Wasm-009688?style=flat-square)](https://ai.google.dev/edge/mediapipe)
 [![WCAG 2.2 AA](https://img.shields.io/badge/WCAG-2.2_AA-149187?style=flat-square)](https://www.w3.org/WAI/WCAG22/quickref/)
 [![MIT License](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](./LICENSE)
 
 <br/>
 
-[🚀 Live Demo](#-live-demo) · [✨ Features](#-features) · [⚙️ Setup](#️-installation) · [♿ Accessibility](#-accessibility) · [🛡️ Responsible AI](#️-responsible-ai) · [🗺️ Roadmap](#️-roadmap)
+[🚀 Handsfree Browser](#-dedicated-browsing-environment) · [⚙️ 30s Calibration](#-30-second-quick-calibration) · [📊 Performance Benchmark](#-performance-evaluation-suite) · [🧩 Chrome Extension](#-universal-chrome-extension)
 
 </div>
 
 ---
 
-## 🧭 Navigation
+## 🧭 Problem Statement Summary
 
-<details>
-<summary>Click to expand full table of contents</summary>
-
-- [Overview](#-overview)
-- [The Problem](#-the-problem)
-- [Our Solution](#-our-solution)
-- [Core Philosophy](#-core-philosophy)
-- [Features](#-features)
-  - [Accessible Job Discovery](#-1-accessible-job-discovery)
-  - [Voice-Powered Search](#️-2-voice-powered-search)
-  - [Accessibility Filters](#-3-accessibility-filters)
-  - [Explainable AI Matching](#-4-explainable-ai-matching)
-  - [Resume Analysis](#-5-resume--job-analysis)
-  - [Accessible Application Flow](#-6-accessible-application-flow)
-  - [Candidate-Controlled Privacy](#-7-candidate-controlled-privacy)
-  - [Read-Aloud Support](#-8-read-aloud-support)
-  - [Accessibility Controls](#-9-accessibility-controls)
-  - [Application Tracker](#-10-application-tracker)
-- [Product Phases](#-five-phase-product-evolution)
-- [User Journey](#-user-journey)
-- [AI Capabilities](#-ai-capabilities)
-- [Accessibility](#-accessibility)
-- [Responsible AI](#️-responsible-ai)
-- [Architecture](#️-system-architecture)
-- [Tech Stack](#️-technology-stack)
-- [Project Structure](#-project-structure)
-- [Installation](#️-installation)
-- [Environment Variables](#-environment-variables)
-- [Demo Guide](#-5-minute-demo-guide)
-- [Impact](#-impact)
-- [Roadmap](#️-roadmap)
-- [Screenshots](#-screenshots)
-- [Contributing](#-contributing)
-- [Team](#-team)
-
-</details>
+> **Title**: 2. Handsfree: Voice and Webcam-Based Browsing  
+> **Backstory**: Millions of people struggle to use a mouse or keyboard comfortably due to motor impairments, temporary injuries, or repetitive strain. While assistive devices exist, they can be expensive ($2,000–$5,000) or require specialized hardware. Webcam tracking and voice recognition offer accessible alternatives, but making them accurate, reliable, and easy to use together remains challenging.  
+> **Problem Statement**: Develop Handsfree, a browsing solution that lets users interact with websites using a standard webcam and microphone, without specialized hardware. Users should be able to control the cursor through head or hand movements, navigate using voice commands, and dictate text into input fields. The system must minimize accidental actions and adapt to changing lighting, posture, and background noise.
 
 ---
 
-## 🌟 Overview
+## 🌟 Key Features & Implementation Architecture
 
-**Ableo** is an AI-powered, accessibility-first career platform that goes beyond job listings. It helps disabled and neurodivergent candidates not just _find_ jobs — but _understand_, _access_, and _apply_ with confidence.
+| Feature | Handsfree Implementation |
+|---|---|
+| **Cursor Control** | Translates head tilt, nose orientation, and hand air-cursor movements into sub-pixel, smooth cursor positioning with exponential smoothing. |
+| **Voice Navigation** | Continuous voice commands for clicking, scrolling (`scroll down/up/top`), opening links, back/forward, and numbered badge targeting (`click 3`). |
+| **Voice Typing** | Natural speech dictation into search bars (Google, DuckDuckGo, Wikipedia) and any web form field with instant transcription. |
+| **Intentional Activation** | Eliminates accidental clicks using a circular SVG dwell countdown meter (0.8s–2.0s), stationary jitter radius guard, and gesture triggers. |
+| **Combined Interaction** | Point head/hand at any link or card and speak `"click"`, `"open"`, or `"read summary"` for multimodal synergy. |
+| **Quick 30s Calibration** | Guided 4-step wizard setting neutral center anchor, head range of motion, dwell delay, and microphone noise floor in under 30 seconds. |
+## 🧩 Universal Chrome Extension
 
-| Traditional Job Portals         | Ableo                             |
-| ------------------------------- | --------------------------------- |
-| Job listings + keyword search   | Career discovery + explainable AI |
-| Apply blindly                   | Understand your match score       |
-| Unknown workplace accessibility | Transparent accessibility info    |
-| One-size-fits-all experience    | Personalised, adaptive, inclusive |
-| Identity disclosure required    | Candidate-controlled privacy      |
+The **Handsfree Manifest V3 Extension** brings head/hand tracking, dwell clicking, and voice dictation to **any website** (Google Search, YouTube, Wikipedia, arbitrary web forms):
 
-> **We are not building another job board.**
-> **We are building the access layer between people and opportunity.**
+1. **Download**: Grab `handsfree-extension.zip` directly from `/handsfree-extension.zip` (or build via `npm run package:extension`).
+2. **Extract**: Unzip the archive into an `extension/` directory.
+3. **Load in Chromium**:
+   - Navigate to `chrome://extensions` (or `edge://extensions` / `brave://extensions`).
+   - Enable **Developer mode** in the upper right.
+   - Click **Load unpacked** and select the unzipped `extension` directory.
+4. **Activate**:
+   - Click the **Handsfree** icon in your browser toolbar.
+   - Toggle **Enable Handsfree**.
+   - The companion tracker opens, requesting camera and mic permissions, broadcasting smooth cursor coordinates and voice commands directly to your active browser tabs!
+
+---
+
+## 🌐 Dedicated Browsing Environment (`/browse`)
+
+Experience full hands-free search and browsing without installing any extension:
+
+- **Live Accessible Search Engine**: Pre-loaded with extensive simulated web, tech, and encyclopedia databases.
+- **Voice Typing**: Dictate queries directly into the search bar with instant natural language recognition.
+- **Dwell Selection**: Hover over search results to trigger the visual dwell progress ring and auto-click.
+- **Numbered Navigation**: Toggle &ldquo;Show Numbers&rdquo; to tag all links with bright badges; speak &ldquo;Click 2&rdquo; to navigate instantly.
+- **Picture-in-Picture Tracker**: Real-time webcam PIP showing face mesh landmarks, hand skeleton, and ambient illumination.
+- **Text-to-Speech Aloud**: Click or speak &ldquo;Read summary&rdquo; to listen to articles via SpeechSynthesis.
+
+---
+
+## ⏱️ 30-Second Quick Calibration (`/calibration`)
+
+Guided 4-step wizard that establishes user baseline within 30 seconds:
+
+1. **Step 1 (0–7s)**: Ambient Lighting &amp; Neutral Posture Anchor.
+2. **Step 2 (7–15s)**: Head Range of Motion boundary targets (Center, Top, Right, Bottom, Left).
+3. **Step 3 (15–22s)**: Intentional Dwell Delay (0.8s–2.0s) &amp; tremor jitter tolerance radius.
+4. **Step 4 (22–30s)**: Room Decibel Noise Floor &amp; spoken trigger validation.
+- **Interactive Verification Arena**: Pop 3 floating test bubbles hands-free to confirm 100% precision!
+
+---
+
+## 📊 Performance Evaluation Suite (`/evaluate`)
+
+Quantitative empirical benchmarking directly addressing the Problem Statement:
+
+- **Standardized 4-Task Battery**:
+  1. Target Acquisition &amp; Selection (decreasing diameter targets: 80px to 35px)
+  2. Voice Typing &amp; Form Input Dictation
+  3. Voice Navigation &amp; Link Traversal
+  4. Accidental Activation Resistance (moving rapidly across distractors)
+- **Comparative Analysis**: Runs in **Handsfree Mode** and **Conventional Mouse &amp; Keyboard Mode**.
+- **Metrics Tracked**:
+  - Task Completion Time (seconds)
+  - Command Accuracy Rate (%)
+  - Selection Errors (count)
+  - Accidental Activations (count)
+- **Visual Analytics**: Interactive Recharts comparison bar charts and multi-dimensional ergonomic radar charts.
+- **Export**: One-click download of JSON Benchmark Report and printable summary.
 
 ---
 
