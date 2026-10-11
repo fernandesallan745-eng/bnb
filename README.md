@@ -1,8 +1,8 @@
-# AccessAI Nexus
+# ARKAI
 
 ### Hands-Free Computer Accessibility
 
-**AccessAI Nexus** is a hands-free computer interaction system that allows users to control a Windows computer using **facial movements, voice commands, and voice typing**.
+**ARKAI** is a hands-free computer interaction system that allows users to control a Windows computer using **facial movements, voice commands, and voice typing**.
 
 The project combines computer vision and speech recognition to provide an alternative to conventional mouse and keyboard interaction.
 
@@ -14,7 +14,7 @@ Traditional computer interfaces rely heavily on a mouse, keyboard, and precise h
 
 For users who experience difficulty with conventional input methods, an alternative interaction mechanism can make computer use more accessible.
 
-**AccessAI Nexus explores a simple idea:**
+**ARKAI explores a simple idea:**
 
 > **What if a computer could respond to facial movements and voice instead?**
 
@@ -22,7 +22,7 @@ For users who experience difficulty with conventional input methods, an alternat
 
 ## 💡 Solution
 
-AccessAI Nexus combines two primary input channels:
+ARKAI combines two primary input channels:
 
 ### 👤 Facial Control
 
@@ -47,11 +47,11 @@ Using local speech recognition:
 * Next / previous tab
 * Voice scrolling
 * Keyboard commands
-* Stop AccessAI
+* Stop ARKAI
 
 ### ⌨️ Voice Typing
 
-AccessAI Nexus also supports a dedicated typing mode:
+ARKAI also supports a dedicated typing mode:
 
 * Speak naturally to type text
 * Enter / Backspace / Space / Tab / Escape / Delete
@@ -78,7 +78,7 @@ AccessAI Nexus also supports a dedicated typing mode:
                              ├──────────────┐
                              │              │
                              ↓              ↓
-                    ACCESSAI INTENT ENGINE
+                    ARKAI INTENT ENGINE
                              ↑              ↑
                              │              │
                              │              │
@@ -145,7 +145,7 @@ https://github.com/sinhasuprabhasinha555-dev/AccessAI-Nexus
 
 ## 🔐 Privacy
 
-AccessAI Nexus is designed around local computer interaction.
+ARKAI is designed around local computer interaction.
 
 The project does not require sending computer-control commands to a remote AI service.
 

@@ -86,7 +86,7 @@ def main():
 
     print()
     print("=" * 60)
-    print("             ACCESSAI CALIBRATION")
+    print("                ARKAI CALIBRATION")
     print("=" * 60)
     print()
     print(
@@ -199,7 +199,7 @@ def main():
                 )
 
                 cv2.imshow(
-                    "AccessAI Calibration",
+                    "ARKAI Calibration",
                     frame
                 )
 
@@ -344,7 +344,7 @@ def main():
             )
 
             cv2.imshow(
-                "AccessAI Calibration",
+                "ARKAI Calibration",
                 frame
             )
 
@@ -620,7 +620,7 @@ def main():
     print()
 
     print(
-        "Your current AccessAI has NOT been changed."
+        "Your current ARKAI setup has NOT been changed."
     )
 
     print(

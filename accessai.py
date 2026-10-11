@@ -8,6 +8,7 @@ import subprocess
 import wave
 import tempfile
 import difflib
+import re
 import ctypes
 
 try:
@@ -31,6 +32,37 @@ try:
 except ImportError:
     sr = None
     SPEECH_AVAILABLE = False
+
+try:
+    from faster_whisper import WhisperModel
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WhisperModel = None
+    WHISPER_AVAILABLE = False
+
+
+def _load_env_file():
+    """Load KEY=VALUE pairs from .env without overriding the real environment."""
+    env_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        ".env",
+    )
+    if not os.path.exists(env_path):
+        return
+
+    with open(env_path, encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            name = name.strip()
+            value = value.strip().strip('"').strip("'")
+            if name and name not in os.environ:
+                os.environ[name] = value
+
+
+_load_env_file()
 
 
 # ============================================================
@@ -92,9 +124,11 @@ SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
 current_x = SCREEN_WIDTH / 2
 current_y = SCREEN_HEIGHT / 2
 
-CURSOR_SMOOTHING = 0.28
-MAX_CURSOR_STEP = 100
-CURSOR_DEADZONE = 0.005
+# Most of the remaining distance is applied every frame, so a head
+# turn reaches the target in a few frames instead of crawling there.
+CURSOR_SMOOTHING = 0.72
+MAX_CURSOR_STEP = 420
+CURSOR_DEADZONE = 0.004
 
 
 # ============================================================
@@ -111,11 +145,11 @@ BOX_BOTTOM = 0.88
 # CENTER LOCK
 # ============================================================
 
-CENTER_LOCK_ENTER_X = 0.035
-CENTER_LOCK_ENTER_Y = 0.032
+CENTER_LOCK_ENTER_X = 0.012
+CENTER_LOCK_ENTER_Y = 0.012
 
-CENTER_LOCK_EXIT_X = 0.060
-CENTER_LOCK_EXIT_Y = 0.055
+CENTER_LOCK_EXIT_X = 0.022
+CENTER_LOCK_EXIT_Y = 0.020
 
 center_locked = False
 
@@ -228,12 +262,26 @@ if VERTICAL_SPAN < 0.03:
 # ============================================================
 
 BLINK_THRESHOLD = 0.20
-MIN_BLINK_DURATION = 0.08
-MAX_BLINK_DURATION = 0.80
-BLINK_COOLDOWN = 1.0
+# Eyes count as closed below this share of the user's own open-eye value,
+# because a fixed 0.20 misses people whose open EAR is low or high.
+BLINK_CLOSED_RATIO = 0.72
+# The landmark model flickers "open" for a frame during a held blink.
+BLINK_OPEN_FRAMES = 3
+# A normal blink is shorter than this. Only a held blink counts as a click.
+MIN_BLINK_DURATION = 0.35
+MAX_BLINK_DURATION = 2.00
+BLINK_COOLDOWN = 1.15
+
+# Holding the pointer still on one spot is the other way to click.
+DWELL_SECONDS = 1.35
+DWELL_RADIUS = 32
+INTENT_COOLDOWN = 1.15
 
 blink_start = None
 last_blink = 0.0
+blink_open_frames = 0
+blink_anchor = None
+ear_baseline = None
 
 
 # ============================================================
@@ -281,6 +329,45 @@ VOICE_IDLE_PAUSE = 0.25
 # recognition call.
 VOICE_OPERATION_TIMEOUT = 2.5
 
+# Local fallback when Google misses a short command. base.en stays on CPU.
+VOICE_MODEL_SIZE = "base.en"
+VOICE_COMPUTE_TYPE = "int8"
+VOICE_INITIAL_PROMPT = (
+    "ARKAI commands: click, left click, right click, double click, "
+    "open this, select, scroll up, scroll down, refresh, go back, stop ARKAI."
+)
+voice_model = None
+
+# Google often returns a fragment of a point-and-speak command.
+# These map that fragment onto the action for the locked pointer.
+_POINT_ALIASES = {
+    "click": "click",
+    "left click": "click",
+    "lick": "click",
+    "lock": "click",
+    "clip": "click",
+    "quick": "click",
+    "flick": "click",
+    "clerk": "click",
+    "klick": "click",
+    "right": "right click",
+    "right click": "right click",
+    "write": "right click",
+    "write click": "right click",
+    "double": "double click",
+    "double click": "double click",
+    "scroll up": "scroll up",
+    "scroll upward": "scroll up",
+    "scroll down": "scroll down",
+    "scroll downward": "scroll down",
+    "open this": "open this",
+    "select": "select",
+    "select this": "select this",
+    "yes": "click",
+    "confirm": "click",
+    "confirm click": "click",
+}
+
 voice_stop_event = threading.Event()
 voice_thread = None
 
@@ -304,12 +391,81 @@ status_until = 0.0
 face_detected = False
 voice_status = "VOICE READY"
 
+# Screen point locked when the user starts speaking, so the voice command
+# acts on the element they were pointing at rather than where the cursor
+# drifts while the phrase is recognized.
+pointed_target = None
+point_hold_until = 0.0
+voice_busy = False
+
+dwell_anchor = None
+dwell_started = None
+dwell_progress = 0.0
+last_intentional_click = 0.0
+
+# While on, ordinary speech is typed into the focused text field.
+typing_mode = False
+
 
 def set_status(message, seconds=1.5):
     global status_text, status_until
     status_text = message
     status_until = time.time() + seconds
     print(message)
+
+
+def note_intentional_activation():
+    """Start the cooldown that blocks a second accidental click."""
+    global last_intentional_click, dwell_anchor, dwell_started, dwell_progress
+    last_intentional_click = time.time()
+    dwell_anchor = None
+    dwell_started = None
+    dwell_progress = 0.0
+
+
+def intentional_click(label):
+    """Click only after a dwell or a deliberate long blink."""
+    global last_blink
+    now = time.time()
+    if now - last_intentional_click < INTENT_COOLDOWN:
+        return False
+    pyautogui.click()
+    last_blink = now
+    note_intentional_activation()
+    set_status(label, 0.9)
+    return True
+
+
+def update_dwell():
+    """Click when the pointer rests on one element. Movement cancels it."""
+    global dwell_anchor, dwell_started, dwell_progress
+
+    now = time.time()
+    if (
+        voice_busy
+        or typing_mode
+        or center_locked
+        or now < point_hold_until
+        or now - last_intentional_click < INTENT_COOLDOWN
+    ):
+        dwell_anchor = None
+        dwell_started = None
+        dwell_progress = 0.0
+        return
+
+    x, y = int(current_x), int(current_y)
+    if (
+        dwell_anchor is None
+        or math.hypot(x - dwell_anchor[0], y - dwell_anchor[1]) > DWELL_RADIUS
+    ):
+        dwell_anchor = (x, y)
+        dwell_started = now
+        dwell_progress = 0.0
+        return
+
+    dwell_progress = min(1.0, (now - dwell_started) / DWELL_SECONDS)
+    if dwell_progress >= 1.0:
+        intentional_click("DWELL → CLICK")
 
 
 # ============================================================
@@ -405,6 +561,10 @@ def map_cursor(face_x, face_y):
 def move_cursor(target_x, target_y):
     global current_x, current_y
 
+    # Hold the pointer still while a point-and-speak command is applied.
+    if time.time() < point_hold_until:
+        return
+
     # When the face is close to the calibrated center, smoothly anchor the
     # cursor instead of repeatedly jumping between the locked center and a
     # mapped position. The narrower enter zone + wider exit zone above gives
@@ -429,23 +589,20 @@ def move_cursor(target_x, target_y):
         dx *= scale
         dy *= scale
 
-    # Use slightly stronger damping near the center so tiny nose/landmark
-    # fluctuations don't look like cursor shaking.
-    damping = CURSOR_SMOOTHING
-    if abs(dx) < 120 and abs(dy) < 120:
-        damping = 0.18
-
-    current_x += dx * damping
-    current_y += dy * damping
+    current_x += dx * CURSOR_SMOOTHING
+    current_y += dy * CURSOR_SMOOTHING
 
     current_x = clamp(current_x, 0, SCREEN_WIDTH - 1)
     current_y = clamp(current_y, 0, SCREEN_HEIGHT - 1)
 
-    pyautogui.moveTo(
-        int(current_x),
-        int(current_y),
-        duration=0
-    )
+    try:
+        pyautogui.moveTo(
+            int(current_x),
+            int(current_y),
+            duration=0
+        )
+    except Exception as e:
+        print(f"   ⚠ Cursor move failed: {type(e).__name__}: {e}")
 
 
 # ============================================================
@@ -516,31 +673,107 @@ def focus_window_under_cursor():
         return False
 
 
+def _running_browser():
+    """Return a browser that is already open, preferring Chrome."""
+    browsers = (
+        "Google Chrome",
+        "Safari",
+        "Arc",
+        "Firefox",
+        "Microsoft Edge",
+        "Brave Browser",
+        "Chromium",
+    )
+    if sys.platform != "darwin":
+        return None
+    for app_name in browsers:
+        found = subprocess.run(
+            ["pgrep", "-x", app_name],
+            capture_output=True,
+        )
+        if found.returncode == 0:
+            return app_name
+    return None
+
+
+def activate_browser():
+    """Bring the open browser forward so shortcuts do not hit the camera window."""
+    if sys.platform != "darwin":
+        focus_window_under_cursor()
+        return False
+
+    app_name = _running_browser()
+    if not app_name:
+        return False
+
+    subprocess.run(["open", "-a", app_name], check=False)
+    time.sleep(0.25)
+    return True
+
+
+def browser_hotkey(*keys):
+    activate_browser()
+    pyautogui.hotkey(*keys)
+
+
+def chrome_do(script):
+    """Ask Chrome directly. Keystrokes miss when the camera window is in front."""
+    if sys.platform != "darwin":
+        return False
+    result = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"   ⚠ Chrome action failed: {result.stderr.strip()}")
+        return False
+    return True
+
+
+def reload_browser_page():
+    """Reload the page in the open browser.
+
+    Windows browsers refresh with F5. macOS browsers refresh with Command-R,
+    and the camera window is usually in front, so the shortcut has
+    to be delivered to the browser.
+    """
+    if sys.platform != "darwin":
+        pyautogui.press("f5")
+        return
+
+    if not chrome_do(
+        'tell application "Google Chrome" to reload active tab of front window'
+    ):
+        browser_hotkey("command", "r")
+
+
 def open_chrome():
     try:
-        subprocess.Popen(
-            ["cmd", "/c", "start", "", "chrome"],
-            shell=False
-        )
+        if sys.platform == "darwin":
+            subprocess.Popen(
+                ["open", "-a", "Google Chrome", "https://www.google.com"]
+            )
+        else:
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", "chrome"],
+                shell=False
+            )
 
-        # Give Chrome a moment to create its window, then focus it.
         time.sleep(0.45)
         focus_window_under_cursor()
         set_status("VOICE → OPEN CHROME")
 
-    except Exception:
-        try:
-            os.startfile("https://www.google.com")
-            time.sleep(0.45)
-            focus_window_under_cursor()
-            set_status("VOICE → OPEN CHROME")
-        except Exception as e:
-            print(f"✗ Could not open Chrome: {e}")
+    except Exception as e:
+        print(f"✗ Could not open Chrome: {e}")
 
 
 def open_calculator():
     try:
-        subprocess.Popen(["calc.exe"])
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-a", "Calculator"])
+        else:
+            subprocess.Popen(["calc.exe"])
         set_status("VOICE → OPEN CALCULATOR")
     except Exception as e:
         print(f"✗ Could not open Calculator: {e}")
@@ -548,7 +781,11 @@ def open_calculator():
 
 def open_documents():
     try:
-        os.startfile(os.path.expanduser("~/Documents"))
+        documents = os.path.expanduser("~/Documents")
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", documents])
+        else:
+            os.startfile(documents)
         set_status("VOICE → OPEN DOCUMENTS")
     except Exception as e:
         print(f"✗ Could not open Documents: {e}")
@@ -557,10 +794,17 @@ def open_documents():
 def _normalize_voice_command(text):
     """Normalize common speech-recognition spacing/punctuation variations."""
     command = text.lower().strip()
-    command = command.replace("access ai", "accessai")
-    command = command.replace("access-ai", "accessai")
-    command = command.replace("access i", "accessai")
-    command = command.replace("access eye", "accessai")
+    command = command.replace(".", " ")
+    command = command.replace(",", " ")
+    command = command.replace("?", " ")
+    command = command.replace("!", " ")
+    command = command.replace("ark ai", "arkai")
+    command = command.replace("ark-ai", "arkai")
+    command = command.replace("access ai", "arkai")
+    command = command.replace("access-ai", "arkai")
+    command = command.replace("accessai", "arkai")
+    command = command.replace("access i", "arkai")
+    command = command.replace("access eye", "arkai")
     command = " ".join(command.split())
     return command
 
@@ -569,14 +813,13 @@ def _looks_like_stop_command(command):
     """Accept common short recognition variants for the emergency stop command."""
     if command in {
         "stop",
+        "stop arkai",
+        "stop ark ai",
         "stop access",
         "stop accessai",
-        "stop access ai",
-        "stop access i",
-        "stop access eye",
         "stop assistant",
-        "exit accessai",
-        "quit accessai",
+        "exit arkai",
+        "quit arkai",
     }:
         return True
 
@@ -586,8 +829,8 @@ def _looks_like_stop_command(command):
     if command.startswith("stop") and len(command) <= 24:
         remainder = command[4:].strip()
         allowed_words = {
-            "", "access", "accessai", "access ai", "access i",
-            "access eye", "assistant", "the assistant"
+            "", "arkai", "ark ai", "access", "accessai",
+            "now", "it", "please", "assistant", "the assistant"
         }
         if remainder in allowed_words:
             return True
@@ -598,7 +841,7 @@ def _looks_like_stop_command(command):
     if command.startswith("stop "):
         target = command.replace(" ", "")
         candidates = [
-            "stopaccessai",
+            "stoparkai",
             "stopaccessai",
             "stopaccess",
             "stopassistant",
@@ -611,19 +854,512 @@ def _looks_like_stop_command(command):
     return False
 
 
+# ============================================================
+# VOICE TYPING
+# ============================================================
+
+MOD_KEY = "command" if sys.platform == "darwin" else "ctrl"
+
+TYPING_KEYS = {
+    "enter": "enter", "press enter": "enter", "hit enter": "enter",
+    "return": "enter", "new line": "enter", "next line": "enter",
+    "backspace": "backspace", "press backspace": "backspace",
+    "back space": "backspace",
+    "space": "space", "press space": "space", "space bar": "space",
+    "tab": "tab", "press tab": "tab",
+    "escape": "esc", "press escape": "esc", "esc": "esc",
+    "delete": "delete", "press delete": "delete",
+}
+TYPING_HOTKEYS = {
+    "select all": "a", "select everything": "a",
+    "copy": "c", "copy that": "c", "copy this": "c",
+    "paste": "v", "paste that": "v", "paste here": "v",
+    "cut": "x", "cut that": "x",
+    "undo": "z", "undo that": "z",
+}
+TYPING_ON_PHRASES = (
+    "typing mode", "start typing", "start typing mode",
+    "enter typing mode", "enable typing", "begin typing",
+)
+TYPING_OFF_PHRASES = (
+    "exit typing", "exit typing mode", "stop typing", "stop typing mode",
+    "end typing", "leave typing mode", "quit typing", "command mode",
+    "close typing mode", "turn off typing",
+)
+TYPING_COMMAND_WORDS = [
+    "typing mode", "start typing", "exit typing mode", "stop typing",
+    "command mode", "select all", "backspace", "escape", "stop ARKAI",
+]
+
+
+def _typing_phrase(command):
+    return re.sub(r"[^a-z0-9 ]", "", command.lower()).strip()
+
+
+def _close_to(command, phrases, threshold):
+    return any(
+        command == phrase
+        or difflib.SequenceMatcher(None, command, phrase).ratio() >= threshold
+        for phrase in phrases
+    )
+
+
+def _clean_typed_text(text):
+    """Drop fillers and the full stop recognizers add after every sentence."""
+    text = (text or "").strip()
+    text = re.sub(r"(?i)\b(?:uh+|um+|hmm+|erm|ah)\b[,.]?", "", text)
+    text = re.sub(r"\s+([,.!?])", r"\1", text)
+    text = re.sub(r"^[,.\s]+", "", text)
+    text = re.sub(r"[,\s]*[.!?]+$", "", text)
+    text = re.sub(r"[,\s]+$", "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _type_text(text):
+    """Type into the focused window. Non-ASCII text goes through the clipboard."""
+    if not text:
+        return
+    if text.isascii():
+        pyautogui.write(text, interval=0.0)
+        return
+    if sys.platform == "darwin":
+        previous = subprocess.run(
+            ["pbpaste"], capture_output=True, text=True
+        ).stdout
+        subprocess.run(["pbcopy"], input=text, text=True)
+        pyautogui.hotkey("command", "v")
+        time.sleep(0.15)
+        subprocess.run(["pbcopy"], input=previous, text=True)
+    else:
+        pyautogui.write(text.encode("ascii", "ignore").decode(), interval=0.0)
+
+
+def handle_typing_speech(text):
+    """Run typing-mode speech. Returns True when the phrase was used."""
+    global typing_mode, running
+
+    raw = (text or "").strip()
+    command = _typing_phrase(_normalize_voice_command(raw))
+    if not command:
+        return False
+
+    # Stop ARKAI still works while typing, but plain "stop" is dictation.
+    if "arkai" in command and _looks_like_stop_command(command):
+        typing_mode = False
+        set_status("VOICE → STOP ARKAI", 2)
+        running = False
+        voice_stop_event.set()
+        return True
+
+    words = command.split()
+
+    if not typing_mode:
+        if len(words) <= 4 and _close_to(command, TYPING_ON_PHRASES, 0.80):
+            typing_mode = True
+            set_status("TYPING MODE ON", 2)
+            print("⌨ TYPING MODE ON — pointer paused, say \"exit typing\" to stop")
+            return True
+
+        one_shot = re.match(
+            r"^\s*(?:type|write|dictate)\s+(.+)$", raw, flags=re.I
+        )
+        if one_shot:
+            typed = _clean_typed_text(one_shot.group(1))
+            _type_text(typed)
+            set_status("VOICE → TYPE", 1)
+            print(f"⌨ Typed: {typed}")
+            return True
+        return False
+
+    # "typing mode" scores 0.81 against "exit typing mode", so repeating
+    # it must keep typing on rather than switch it off.
+    if command in TYPING_ON_PHRASES:
+        set_status("TYPING MODE ON", 1.5)
+        return True
+
+    if len(words) <= 4 and (
+        _close_to(command, TYPING_OFF_PHRASES, 0.80)
+        or ("typing" in words and words[0] in {
+            "exit", "exiting", "stop", "end", "quit", "leave", "close",
+        })
+    ):
+        typing_mode = False
+        set_status("COMMAND MODE", 2)
+        print("⌨ COMMAND MODE — typing stopped")
+        return True
+
+    if command in TYPING_KEYS:
+        pyautogui.press(TYPING_KEYS[command])
+        set_status(f"KEY → {TYPING_KEYS[command].upper()}", 1)
+        return True
+
+    if command in TYPING_HOTKEYS:
+        pyautogui.hotkey(MOD_KEY, TYPING_HOTKEYS[command])
+        set_status(f"KEY → {command.upper()}", 1)
+        return True
+
+    typed = _clean_typed_text(raw)
+    if typed:
+        _type_text(typed + " ")
+        set_status("VOICE → TYPING", 0.8)
+        print(f"⌨ Typed: {typed}")
+    return True
+
+
+def _pause_cursor_controls():
+    """Drop any blink, dwell, or tilt that was in progress."""
+    global blink_start, blink_open_frames, blink_anchor
+    global dwell_anchor, dwell_started, dwell_progress
+    global tilt_state, tilt_candidate, tilt_candidate_frames
+    global tilt_release_frames
+
+    blink_start = None
+    blink_open_frames = 0
+    blink_anchor = None
+    dwell_anchor = None
+    dwell_started = None
+    dwell_progress = 0.0
+    tilt_state = 0
+    tilt_candidate = 0
+    tilt_candidate_frames = 0
+    tilt_release_frames = 0
+
+
+def capture_pointed_target():
+    """Remember the element under the cursor at the moment speech starts."""
+    global pointed_target, voice_status, voice_busy
+    if typing_mode:
+        return
+    pointed_target = (int(current_x), int(current_y))
+    voice_busy = True
+    voice_status = "POINT LOCKED"
+    print(
+        f"   ✓ Point locked at {pointed_target[0]}, {pointed_target[1]}"
+    )
+
+
+def act_at_pointed_element(action):
+    """Run a pointer action on the element the user was looking at."""
+    global point_hold_until, current_x, current_y
+
+    if typing_mode:
+        return
+    if pointed_target:
+        x, y = pointed_target
+    else:
+        x, y = int(current_x), int(current_y)
+
+    point_hold_until = time.time() + 0.7
+    time.sleep(0.05)
+    current_x = x
+    current_y = y
+    pyautogui.moveTo(x, y, duration=0)
+    time.sleep(0.05)
+    action()
+
+
+def _canonicalize_command(command):
+    """Map a short, misheard phrase onto a point-and-speak command."""
+    if command in _POINT_ALIASES:
+        return _POINT_ALIASES[command]
+
+    if len(command.split()) > 3:
+        return command
+
+    best_command = command
+    best_score = 0.0
+    for alias, canonical in _POINT_ALIASES.items():
+        score = difflib.SequenceMatcher(None, command, alias).ratio()
+        if score > best_score:
+            best_score = score
+            best_command = canonical
+
+    if best_score >= 0.78:
+        return best_command
+
+    return command
+
+
+def _command_is_known(command):
+    command = _canonicalize_command(_normalize_voice_command(command))
+    if not command:
+        return False
+    if command in _POINT_ALIASES.values():
+        return True
+    keywords = (
+        "stop", "chrome", "calculator", "calc", "document",
+        "back", "forward", "refresh", "reload", "tab",
+        "scroll", "click", "select", "enter", "space", "home",
+        "yes", "confirm",
+        "open this", "right click", "double click",
+    )
+    return any(word in command for word in keywords)
+
+
+WISPR_API_URL = "https://platform-api.wisprflow.ai/api/v1/dash/api"
+ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text"
+WISPR_COMMAND_WORDS = [
+    "new tab", "close tab", "next tab", "previous tab",
+    "refresh", "reload", "scroll up", "scroll down",
+    "open chrome", "open calculator", "open documents",
+    "go back", "go forward", "click", "right click",
+    "double click", "stop ARKAI",
+]
+
+
+_elevenlabs_http = None
+
+
+def _elevenlabs_api_key():
+    """Read the ElevenLabs key from .env under any common spelling."""
+    accepted = {
+        "elevenlabs_api_key",
+        "eleven_labs_api_key",
+        "xi_api_key",
+    }
+    for name, value in os.environ.items():
+        if name.lower() in accepted and value.strip():
+            return value.strip()
+    return ""
+
+
+def _elevenlabs_client():
+    """Reuse one HTTPS connection so each command skips a new handshake."""
+    global _elevenlabs_http
+    key = _elevenlabs_api_key()
+    if not key:
+        return None
+    if _elevenlabs_http is None:
+        import httpx
+        _elevenlabs_http = httpx.Client(
+            headers={"xi-api-key": key},
+            timeout=6.0,
+        )
+    return _elevenlabs_http
+
+
+def _warm_elevenlabs():
+    client = _elevenlabs_client()
+    if client is None:
+        return
+    try:
+        client.get("https://api.elevenlabs.io/")
+    except Exception:
+        pass
+
+
+def _transcribe_elevenlabs(wav_path):
+    """Transcribe a short command clip with ElevenLabs Scribe."""
+    client = _elevenlabs_client()
+    if client is None or not wav_path or not os.path.exists(wav_path):
+        return ""
+
+    try:
+        with wave.open(wav_path, "rb") as wav_file:
+            pcm = wav_file.readframes(wav_file.getnframes())
+
+        # Raw 16 kHz PCM skips their audio decoder. Keyterms stop "tab"
+        # turning into "time" and cost no measurable latency.
+        parts = [
+            ("model_id", (None, "scribe_v2")),
+            ("language_code", (None, "en")),
+            ("tag_audio_events", (None, "false")),
+            ("file_format", (None, "pcm_s16le_16")),
+            ("file", ("command.pcm", pcm, "application/octet-stream")),
+        ]
+        terms = (
+            TYPING_COMMAND_WORDS
+            if typing_mode
+            else WISPR_COMMAND_WORDS + ["typing mode", "start typing"]
+        )
+        for term in terms:
+            parts.append(("keyterms", (None, term)))
+
+        response = client.post(ELEVENLABS_STT_URL, files=parts)
+
+        if response.status_code != 200:
+            detail = ""
+            try:
+                body = response.json()
+                detail = body.get("detail") or body.get("message") or ""
+            except Exception:
+                detail = ""
+            if isinstance(detail, list):
+                detail = "; ".join(
+                    str(item.get("msg", item)) if isinstance(item, dict) else str(item)
+                    for item in detail
+                )
+            print(f"   ⚠ ElevenLabs returned {response.status_code} {detail}".rstrip())
+            return ""
+
+        return str(response.json().get("text", "")).strip()
+    except Exception as e:
+        print(f"   ⚠ ElevenLabs failed: {type(e).__name__}: {e}")
+        return ""
+
+
+def _transcribe_wispr(wav_path):
+    """Transcribe with Wispr Flow when WISPR_API_KEY is set."""
+    key = os.environ.get("WISPR_API_KEY", "").strip()
+    if not key or not wav_path or not os.path.exists(wav_path):
+        return ""
+
+    try:
+        import base64
+        import httpx
+
+        with open(wav_path, "rb") as audio_file:
+            audio_b64 = base64.b64encode(audio_file.read()).decode("ascii")
+
+        response = httpx.post(
+            WISPR_API_URL,
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "audio": audio_b64,
+                "language": ["en"],
+                "context": {
+                    "app": {"type": "other"},
+                    "dictionary_context": WISPR_COMMAND_WORDS,
+                },
+            },
+            timeout=8.0,
+        )
+        if response.status_code != 200:
+            print(f"   ⚠ Wispr Flow returned {response.status_code}")
+            return ""
+        return str(response.json().get("text", "")).strip()
+    except Exception as e:
+        print(f"   ⚠ Wispr Flow failed: {type(e).__name__}: {e}")
+        return ""
+
+
+def _transcribe_locally(wav_path):
+    """Read the same recording with local Whisper when Google misses it."""
+    global voice_model
+
+    if not WHISPER_AVAILABLE:
+        return ""
+
+    try:
+        if voice_model is None:
+            print("   Loading local speech model...")
+            voice_model = WhisperModel(
+                VOICE_MODEL_SIZE,
+                device="cpu",
+                compute_type=VOICE_COMPUTE_TYPE,
+            )
+            print("   ✓ Local speech model ready")
+
+        if not wav_path or not os.path.exists(wav_path):
+            return ""
+
+        segments, _info = voice_model.transcribe(
+            wav_path,
+            language="en",
+            beam_size=1,
+            best_of=1,
+            temperature=0.0,
+            condition_on_previous_text=False,
+            vad_filter=True,
+            without_timestamps=True,
+            initial_prompt=VOICE_INITIAL_PROMPT,
+        )
+        return " ".join(
+            segment.text.strip() for segment in segments
+        ).strip()
+    except Exception as e:
+        print(f"   ⚠ Local speech recognition failed: {type(e).__name__}: {e}")
+        return ""
+
+
+def _match_spoken_command(text):
+    """Pull one command out of a short or slightly misheard phrase."""
+    command = _normalize_voice_command(text)
+    if not command:
+        return ""
+
+    token_fixes = {
+        "deck": "tab",
+        "tap": "tab",
+        "dab": "tab",
+        "town": "tab",
+        "tech": "tab",
+        "tub": "tab",
+        "step": "stop",
+        "fresh": "refresh",
+        "refreshed": "refresh",
+    }
+    words = [token_fixes.get(word, word) for word in command.split()]
+    command = " ".join(words)
+    direct = _expand_short_command(_canonicalize_command(command))
+    if len(words) <= 5 and _command_is_known(direct):
+        return direct
+
+    catalog = (
+        "new tab", "close tab", "close this tab", "next tab", "previous tab",
+        "refresh", "reload", "go back", "back", "go forward", "forward",
+        "scroll up", "scroll down", "open chrome", "open calculator",
+        "open documents", "click", "right click", "double click",
+        "stop", "enter", "space", "home", "yes", "confirm",
+    )
+    best = ""
+    best_score = 0.0
+    for size in (1, 2, 3, 4):
+        if len(words) < size:
+            continue
+        for start in range(len(words) - size + 1):
+            chunk = " ".join(words[start:start + size])
+            for target in catalog:
+                score = difflib.SequenceMatcher(None, chunk, target).ratio()
+                if score > best_score:
+                    best = target
+                    best_score = score
+
+    if best_score >= 0.76:
+        return _expand_short_command(best)
+    return ""
+
+
+def _expand_short_command(command):
+    """Map the fragments Google often returns onto a full command."""
+    shorts = {
+        "new": "new tab",
+        "tab": "new tab",
+        "next": "next tab",
+        "previous": "previous tab",
+        "close": "close tab",
+        "chrome": "open chrome",
+        "calculator": "open calculator",
+        "calc": "open calculator",
+        "documents": "open documents",
+        "document": "open documents",
+        "stop now": "stop",
+        "stop it": "stop",
+        "stop please": "stop",
+    }
+    return shorts.get(command, command)
+
+
 def execute_voice_command(text):
     global running
 
-    command = _normalize_voice_command(text)
+    command = _canonicalize_command(_normalize_voice_command(text))
+    command = _expand_short_command(command)
 
     print(f"✓ Recognized: {command}")
+
+    # A long, unrelated sentence can contain a command word by accident.
+    if len(command.split()) > 5 and not _looks_like_stop_command(command):
+        print("  Command not in allow-list.")
+        return
 
     # --------------------------------------------------------
     # STOP — intentionally forgiving because Google often
     # drops the final "AccessAI" words.
     # --------------------------------------------------------
     if _looks_like_stop_command(command):
-        set_status("VOICE → STOP ACCESSAI", 2)
+        set_status("VOICE → STOP ARKAI", 2)
         running = False
         voice_stop_event.set()
         return
@@ -665,17 +1401,31 @@ def execute_voice_command(text):
     # BROWSER NAVIGATION
     # --------------------------------------------------------
     if "go back" in command or command == "back":
-        pyautogui.hotkey("alt", "left")
+        if sys.platform == "darwin":
+            if not chrome_do(
+                'tell application "Google Chrome" to activate\n'
+                'tell application "System Events" to keystroke "[" using command down'
+            ):
+                browser_hotkey("command", "left")
+        else:
+            pyautogui.hotkey("alt", "left")
         set_status("VOICE → GO BACK")
         return
 
     if "go forward" in command or command == "forward":
-        pyautogui.hotkey("alt", "right")
+        if sys.platform == "darwin":
+            if not chrome_do(
+                'tell application "Google Chrome" to activate\n'
+                'tell application "System Events" to keystroke "]" using command down'
+            ):
+                browser_hotkey("command", "right")
+        else:
+            pyautogui.hotkey("alt", "right")
         set_status("VOICE → GO FORWARD")
         return
 
     if "refresh" in command or "reload" in command:
-        pyautogui.press("f5")
+        reload_browser_page()
         set_status("VOICE → REFRESH")
         return
 
@@ -689,7 +1439,18 @@ def execute_voice_command(text):
         or "open new tab" in command
         or "create new tab" in command
     ):
-        pyautogui.hotkey("ctrl", "t")
+        if sys.platform == "darwin":
+            opened = chrome_do(
+                'tell application "Google Chrome"\n'
+                'activate\n'
+                'if (count of windows) = 0 then make new window\n'
+                'tell front window to make new tab at end\n'
+                'end tell'
+            )
+            if not opened:
+                browser_hotkey("command", "t")
+        else:
+            pyautogui.hotkey("ctrl", "t")
         set_status("VOICE → NEW TAB")
         return
 
@@ -697,7 +1458,17 @@ def execute_voice_command(text):
         "close tab" in command
         or "close this tab" in command
     ):
-        pyautogui.hotkey("ctrl", "w")
+        if sys.platform == "darwin":
+            closed = chrome_do(
+                'tell application "Google Chrome"\n'
+                'activate\n'
+                'close active tab of front window\n'
+                'end tell'
+            )
+            if not closed:
+                browser_hotkey("command", "w")
+        else:
+            pyautogui.hotkey("ctrl", "w")
         set_status("VOICE → CLOSE TAB")
         return
 
@@ -705,7 +1476,19 @@ def execute_voice_command(text):
         "next tab" in command
         or "switch tab" in command
     ):
-        pyautogui.hotkey("ctrl", "tab")
+        if sys.platform == "darwin":
+            moved = chrome_do(
+                'tell application "Google Chrome"\n'
+                'activate\n'
+                'set w to front window\n'
+                'set n to active tab index of w\n'
+                'if n < (count of tabs of w) then set active tab index of w to n + 1\n'
+                'end tell'
+            )
+            if not moved:
+                browser_hotkey("ctrl", "tab")
+        else:
+            pyautogui.hotkey("ctrl", "tab")
         set_status("VOICE → NEXT TAB")
         return
 
@@ -713,7 +1496,19 @@ def execute_voice_command(text):
         "previous tab" in command
         or "last tab" in command
     ):
-        pyautogui.hotkey("ctrl", "shift", "tab")
+        if sys.platform == "darwin":
+            moved = chrome_do(
+                'tell application "Google Chrome"\n'
+                'activate\n'
+                'set w to front window\n'
+                'set n to active tab index of w\n'
+                'if n > 1 then set active tab index of w to n - 1\n'
+                'end tell'
+            )
+            if not moved:
+                browser_hotkey("ctrl", "shift", "tab")
+        else:
+            pyautogui.hotkey("ctrl", "shift", "tab")
         set_status("VOICE → PREVIOUS TAB")
         return
 
@@ -723,52 +1518,99 @@ def execute_voice_command(text):
     # setting produced only about a line of movement in Chrome.
     # --------------------------------------------------------
     if "scroll up" in command or "scroll upward" in command:
-        pyautogui.scroll(12)
-        set_status("VOICE → SCROLL UP")
+        if not chrome_do(
+            'tell application "Google Chrome" to tell active tab of front window '
+            'to execute javascript "window.scrollBy(0, -500)"'
+        ):
+            activate_browser()
+            pyautogui.press("pageup")
+        set_status("POINT + SCROLL UP")
         return
 
     if "scroll down" in command or "scroll downward" in command:
-        pyautogui.scroll(-12)
-        set_status("VOICE → SCROLL DOWN")
+        if not chrome_do(
+            'tell application "Google Chrome" to tell active tab of front window '
+            'to execute javascript "window.scrollBy(0, 500)"'
+        ):
+            activate_browser()
+            pyautogui.press("pagedown")
+        set_status("POINT + SCROLL DOWN")
         return
 
     # --------------------------------------------------------
-    # CLICK
-    # "click" acts at the current face-controlled cursor
-    # position. In Chrome, place the cursor over the link/button
-    # first, then say click.
+    # POINT + VOICE
+    # The cursor position was locked when speech started. These
+    # commands interact with that element: click, double-click,
+    # right-click, or open whatever is under the pointer.
     # --------------------------------------------------------
+    if "double click" in command or "double-click" in command:
+        act_at_pointed_element(pyautogui.doubleClick)
+        set_status("POINT + DOUBLE CLICK")
+        return
+
+    if "right click" in command or "right-click" in command:
+        act_at_pointed_element(
+            lambda: pyautogui.click(button="right")
+        )
+        set_status("POINT + RIGHT CLICK")
+        return
+
     if (
-        command == "click"
-        or command == "left click"
+        command in {
+            "click",
+            "left click",
+            "select",
+            "open this",
+            "open it",
+            "press this",
+            "press it",
+            "yes",
+            "confirm",
+            "confirm click",
+        }
         or "click here" in command
+        or "click this" in command
+        or "click that" in command
         or "click link" in command
-        or "click on link" in command
-        or command == "select"
+        or "click on" in command
+        or "select this" in command
+        or "open this" in command
+        or "press this" in command
     ):
-        # If Chrome is open, make sure the click goes to Chrome rather than
-        # the VS Code terminal that launched AccessAI.
         focus_window_under_cursor()
-        time.sleep(0.12)
-        pyautogui.click(button="left")
-        set_status("VOICE → CLICK")
+        note_intentional_activation()
+        act_at_pointed_element(
+            lambda: pyautogui.click(button="left")
+        )
+        set_status("VOICE → CONFIRM CLICK")
         return
 
     # --------------------------------------------------------
     # KEYBOARD
     # --------------------------------------------------------
     if command == "enter" or "press enter" in command:
+        if sys.platform == "darwin":
+            activate_browser()
         pyautogui.press("enter")
         set_status("VOICE → ENTER")
         return
 
     if command == "space" or "press space" in command:
+        if sys.platform == "darwin":
+            activate_browser()
         pyautogui.press("space")
         set_status("VOICE → SPACE")
         return
 
     if command == "home" or "go home" in command:
-        pyautogui.press("home")
+        if sys.platform == "darwin":
+            if not chrome_do(
+                'tell application "Google Chrome" to tell active tab of front window '
+                'to execute javascript "window.scrollTo(0, 0)"'
+            ):
+                browser_hotkey("command", "up")
+        else:
+            pyautogui.press("home")
         set_status("VOICE → HOME")
         return
 
@@ -797,12 +1639,23 @@ def _record_wav_with_soundcard():
     if microphone is None:
         raise RuntimeError("Windows default microphone was not found.")
 
-    # 100 ms chunks make endpoint detection responsive without excessive overhead.
-    chunk_frames = int(VOICE_SAMPLE_RATE * 0.10)
-    max_frames = int(VOICE_RECORD_SECONDS * VOICE_SAMPLE_RATE)
-    pre_roll_chunks = 3
-    silence_chunks_needed = max(1, int(VOICE_IDLE_PAUSE / 0.10))
-    min_speech_chunks = 2  # about 200 ms minimum speech
+    # The gap inside "open chrome" or "new tab" is about 150 ms, so the
+    # end-of-command pause has to be longer than that.
+    fast_capture = bool(_elevenlabs_api_key())
+    chunk_seconds = 0.04 if fast_capture else 0.10
+    speech_cap = 1.8 if fast_capture else VOICE_RECORD_SECONDS
+    idle_pause = 0.28 if fast_capture else VOICE_IDLE_PAUSE
+    record_seconds = VOICE_RECORD_SECONDS
+    # Dictated sentences are longer and have natural pauses between words.
+    if typing_mode:
+        speech_cap = 8.0
+        idle_pause = 0.70
+        record_seconds = 9.0
+    chunk_frames = int(VOICE_SAMPLE_RATE * chunk_seconds)
+    max_frames = int(record_seconds * VOICE_SAMPLE_RATE)
+    pre_roll_chunks = 2 if fast_capture else 3
+    silence_chunks_needed = max(1, int(round(idle_pause / chunk_seconds)))
+    min_speech_chunks = 2
 
     print(f"   ✓ Windows microphone: {microphone.name}")
     print(f"   Format: {VOICE_SAMPLE_RATE} Hz, mono")
@@ -810,6 +1663,8 @@ def _record_wav_with_soundcard():
 
     chunks = []
     speech_started = False
+    speech_started_at = None
+    speech_peak = 0.0
     speech_chunks = 0
     silent_chunks = 0
     total_frames = 0
@@ -852,25 +1707,40 @@ def _record_wav_with_soundcard():
             noise_floor = float(np.median(noise_levels)) if noise_levels else 0.003
             threshold = max(0.004, noise_floor * 2.2)
 
-            if level >= threshold:
-                if not speech_started:
+            if not speech_started:
+                if level >= threshold and len(noise_levels) >= pre_roll_chunks:
                     speech_started = True
+                    speech_started_at = time.monotonic()
+                    speech_peak = level
                     print("   🎤 SPEECH DETECTED")
-                speech_chunks += 1
-                silent_chunks = 0
-            elif speech_started:
-                silent_chunks += 1
+                    capture_pointed_target()
+                    speech_chunks = 1
+                    silent_chunks = 0
+            else:
+                still_speaking = level >= max(threshold, speech_peak * 0.12)
+                if still_speaking:
+                    speech_peak = max(speech_peak, level)
+                    speech_chunks += 1
+                    silent_chunks = 0
+                else:
+                    silent_chunks += 1
+                    if (
+                        speech_chunks >= min_speech_chunks
+                        and silent_chunks >= silence_chunks_needed
+                    ):
+                        break
 
-                # Once enough speech has been captured, end the command after
-                # a short silence instead of waiting for the full 3 seconds.
                 if (
-                    speech_chunks >= min_speech_chunks
-                    and silent_chunks >= silence_chunks_needed
+                    speech_started_at is not None
+                    and time.monotonic() - speech_started_at >= speech_cap
                 ):
                     break
 
             # Hard safety limit even if there is continuous background noise.
-            if elapsed >= VOICE_RECORD_SECONDS:
+            # Typing mode waits until speech starts before the limit applies.
+            if elapsed >= record_seconds or (
+                not speech_started and elapsed >= VOICE_RECORD_SECONDS
+            ):
                 break
 
     if not chunks:
@@ -882,7 +1752,7 @@ def _record_wav_with_soundcard():
     # If speech was detected, remove excessive trailing silence while keeping
     # a small tail so the final word is not cut off.
     if speech_started:
-        keep_tail = int(VOICE_SAMPLE_RATE * 0.15)
+        keep_tail = int(VOICE_SAMPLE_RATE * 0.12)
         samples = samples[:min(len(samples), total_frames - max(0, silent_chunks * chunk_frames) + keep_tail)]
 
     samples = np.asarray(samples, dtype=np.float32)
@@ -912,7 +1782,7 @@ def _record_wav_with_soundcard():
         wf.writeframes(pcm.tobytes())
 
     print("   ✓ Windows/WASAPI WAV created")
-    return wav_path
+    return wav_path, speech_started, rms, peak
 
 
 def voice_loop():
@@ -930,6 +1800,7 @@ def voice_loop():
     global voice_status
     global last_voice_text
     global last_voice_time
+    global voice_busy
 
     if not SPEECH_AVAILABLE:
         voice_status = "VOICE PACKAGE MISSING"
@@ -944,13 +1815,20 @@ def voice_loop():
 
     recognizer = sr.Recognizer()
     recognizer.operation_timeout = VOICE_OPERATION_TIMEOUT
+    if _elevenlabs_api_key():
+        _warm_elevenlabs()
+    else:
+        _transcribe_locally("")
 
     print()
     print("🎙 Voice thread started.")
     print("   Microphone: Windows default input (SoundCard/WASAPI)")
     print(f"   Recording: {VOICE_RECORD_SECONDS:.1f}s")
     print(f"   Google operation timeout: {VOICE_OPERATION_TIMEOUT}s")
-    print("   Pipeline: Windows/WASAPI → WAV → Google SpeechRecognition")
+    if _elevenlabs_api_key():
+        print("   Speech: ElevenLabs Scribe, then the local listener")
+    else:
+        print("   Pipeline: Windows/WASAPI → WAV → Google SpeechRecognition")
     print()
 
     while not voice_stop_event.is_set() and running:
@@ -959,32 +1837,88 @@ def voice_loop():
         try:
             voice_status = "LISTENING"
 
-            wav_path = _record_wav_with_soundcard()
+            wav_path, heard_speech, rms, peak = _record_wav_with_soundcard()
 
             if voice_stop_event.is_set() or not running:
                 break
 
+            # Short commands on the built-in mic can have low average energy,
+            # so a clear peak is enough once speech was detected.
+            if not heard_speech or (rms < 0.012 and peak < 0.10):
+                print("   (too quiet, still listening)")
+                voice_status = "VOICE READY"
+                continue
+
             voice_status = "RECOGNIZING"
-            print("   ☁ Sending WAV to Google...")
+            text = ""
+            matched = ""
+            typed = False
+            if _elevenlabs_api_key():
+                print("   🎙 ElevenLabs...")
+                started = time.perf_counter()
+                text = _transcribe_elevenlabs(wav_path)
+                elapsed = time.perf_counter() - started
+                if text:
+                    print(f"   ✓ ElevenLabs hearing: {text} ({elapsed:.2f}s)")
+                typed = bool(text) and handle_typing_speech(text)
+                if not typed:
+                    matched = _match_spoken_command(text)
+                    if text and not matched:
+                        print("   ✗ Could not understand the speech.")
+                        voice_status = "VOICE READY"
+                        continue
 
-            # Read the WAV through SpeechRecognition's tested AudioFile
-            # path rather than manually constructing AudioData.
-            with sr.AudioFile(wav_path) as source:
-                audio = recognizer.record(source)
+            if not typed and not matched and os.environ.get("WISPR_API_KEY", "").strip():
+                print("   🎙 Wispr Flow...")
+                text = _transcribe_wispr(wav_path)
+                if text:
+                    print(f"   ✓ Wispr hearing: {text}")
+                typed = bool(text) and handle_typing_speech(text)
+                if not typed:
+                    matched = _match_spoken_command(text)
 
-            # Try Indian English first, then US English using the exact
-            # same captured audio. Both are supported by Google's recognizer.
-            try:
-                text = recognizer.recognize_google(
-                    audio,
-                    language="en-IN"
-                )
-            except sr.UnknownValueError:
-                print("   ⚠ en-IN could not understand; retrying as en-US...")
-                text = recognizer.recognize_google(
-                    audio,
-                    language="en-US"
-                )
+            if not typed and not matched:
+                print("   🎙 Hearing the command locally...")
+                text = _transcribe_locally(wav_path)
+                typed = bool(text) and handle_typing_speech(text)
+                if not typed:
+                    matched = _match_spoken_command(text)
+
+            if typed:
+                voice_status = "TYPING" if typing_mode else "VOICE READY"
+                voice_stop_event.wait(VOICE_COOLDOWN)
+                continue
+
+            if not matched:
+                print("   ☁ Asking Google once...")
+                with sr.AudioFile(wav_path) as source:
+                    audio = recognizer.record(source)
+                google_text = ""
+                try:
+                    google_text = recognizer.recognize_google(
+                        audio,
+                        language="en-IN"
+                    )
+                except sr.UnknownValueError:
+                    google_text = ""
+                if google_text:
+                    print(f"   ✓ Google hearing: {google_text}")
+                    if handle_typing_speech(google_text):
+                        voice_status = "TYPING" if typing_mode else "VOICE READY"
+                        continue
+                    matched = _match_spoken_command(google_text) or google_text
+
+            if matched:
+                if matched != _normalize_voice_command(text or ""):
+                    print(f"   ✓ Using command: {matched}")
+                text = matched
+
+            if not text or not _match_spoken_command(text):
+                print("   ✗ Could not understand the speech.")
+                voice_status = "VOICE READY"
+                continue
+
+            text = _match_spoken_command(text)
 
             now = time.time()
             normalized = text.strip().lower()
@@ -1023,6 +1957,7 @@ def voice_loop():
             voice_stop_event.wait(2.0)
 
         finally:
+            voice_busy = False
             if wav_path and os.path.exists(wav_path):
                 try:
                     os.remove(wav_path)
@@ -1130,7 +2065,7 @@ def draw_ui(frame, ear=None, scroll_status="SCROLL READY"):
 
     cv2.putText(
         frame,
-        "ACCESSAI NEXUS",
+        "ARKAI",
         (18, 30),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.75,
@@ -1152,10 +2087,20 @@ def draw_ui(frame, ear=None, scroll_status="SCROLL READY"):
 
     cv2.putText(
         frame,
-        f"VOICE: {voice_status}",
+        f"VOICE: {voice_status}" + ("  |  TYPING MODE" if typing_mode else ""),
         (18, 82),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.52,
+        (255, 255, 255),
+        1
+    )
+
+    cv2.putText(
+        frame,
+        "POINT + VOICE = ACT",
+        (18, 106),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.48,
         (255, 255, 255),
         1
     )
@@ -1172,7 +2117,7 @@ def draw_ui(frame, ear=None, scroll_status="SCROLL READY"):
 
     cv2.putText(
         frame,
-        "BLINK = CLICK",
+        "LONG BLINK = CLICK",
         (18, h - 53),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.52,
@@ -1197,6 +2142,17 @@ def draw_ui(frame, ear=None, scroll_status="SCROLL READY"):
             (w - 125, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.48,
+            (255, 255, 255),
+            1
+        )
+
+    if dwell_progress >= 0.25:
+        cv2.putText(
+            frame,
+            f"DWELL {int(dwell_progress * 100)}%",
+            (w - 160, h - 52),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.52,
             (255, 255, 255),
             1
         )
@@ -1236,6 +2192,12 @@ def main():
     global face_detected
     global blink_start
     global last_blink
+    global blink_open_frames
+    global blink_anchor
+    global ear_baseline
+    global dwell_anchor
+    global dwell_started
+    global dwell_progress
     global last_scroll_time
     global tilt_state
     global tilt_candidate
@@ -1244,18 +2206,29 @@ def main():
 
     print()
     print("=" * 60)
-    print("                    ACCESSAI NEXUS")
+    print("                         ARKAI")
     print("=" * 60)
     print()
     print("FACE")
     print("  Head movement  -> Cursor")
-    print("  Blink          -> Left click")
+    print("  Long blink     -> Click")
+    print("  Hold still     -> Dwell click")
     print("  Head tilt      -> Scroll")
     print()
     print("VOICE")
     print("  Open Chrome / Calculator / Documents")
-    print("  Click / Scroll / Back / Forward / Refresh")
-    print("  Enter / Space / Stop AccessAI")
+    print("  Back / Forward / Refresh")
+    print("  Enter / Space / Stop ARKAI")
+    print()
+    print("VOICE TYPING")
+    print("  Say \"typing mode\", then speak to type")
+    print("  Enter / Backspace / Space / Tab / Escape / Delete")
+    print("  Select all / Copy / Paste")
+    print("  \"Type ...\" types once; \"exit typing\" stops")
+    print()
+    print("POINT + VOICE")
+    print("  Look at an element, then say:")
+    print("  Click / Open this / Double click / Right click / Scroll")
     print()
     print("Performance:")
     print(f"  Camera: {CAMERA_WIDTH}x{CAMERA_HEIGHT}")
@@ -1268,7 +2241,9 @@ def main():
     print()
 
     # Disable PyAutoGUI's default pause so cursor movement is responsive.
+    # The corner failsafe would otherwise stop the pointer dead.
     pyautogui.PAUSE = 0
+    pyautogui.FAILSAFE = False
 
     landmarker = None
     cap = None
@@ -1303,7 +2278,7 @@ def main():
         # camera processing loop.
         start_voice_thread()
 
-        print("AccessAI is running.")
+        print("ARKAI is running.")
         print()
 
         while running:
@@ -1366,11 +2341,6 @@ def main():
                         face_y
                     )
 
-                    move_cursor(
-                        target_x,
-                        target_y
-                    )
-
                     # --------------------------------------------
                     # 2. BLINK -> CLICK
                     # --------------------------------------------
@@ -1389,20 +2359,49 @@ def main():
                         left_ear + right_ear
                     ) / 2.0
 
-                    now = time.time()
-
-                    if ear_value < BLINK_THRESHOLD:
-
-                        if blink_start is None:
-                            blink_start = now
-
+                    if typing_mode:
+                        _pause_cursor_controls()
+                        scroll_status = "POINTER PAUSED"
                     else:
+                        now = time.time()
 
-                        if blink_start is not None:
-
-                            blink_duration = (
-                                now - blink_start
+                        closed_below = BLINK_THRESHOLD
+                        if ear_baseline is not None:
+                            closed_below = max(
+                                BLINK_THRESHOLD,
+                                ear_baseline * BLINK_CLOSED_RATIO,
                             )
+                        eyes_closed = ear_value < closed_below
+
+                        if eyes_closed:
+                            blink_open_frames = 0
+                            if blink_start is None:
+                                blink_start = now
+                                blink_anchor = (current_x, current_y)
+                            elif now - blink_start > MAX_BLINK_DURATION:
+                                # A long "closed" reading is the head moving, not
+                                # a click. Drop it so the pointer is never held.
+                                blink_start = None
+                                blink_open_frames = 0
+                                blink_anchor = None
+                        else:
+                            if blink_start is None:
+                                ear_baseline = (
+                                    ear_value
+                                    if ear_baseline is None
+                                    else ear_baseline * 0.95 + ear_value * 0.05
+                                )
+                            else:
+                                blink_open_frames += 1
+
+                        if (
+                            blink_start is not None
+                            and blink_open_frames >= BLINK_OPEN_FRAMES
+                        ):
+                            blink_duration = now - blink_start
+
+                            if blink_duration >= 0.15:
+                                print(f"   Blink held {blink_duration:.2f}s")
 
                             valid_blink = (
                                 MIN_BLINK_DURATION
@@ -1415,94 +2414,105 @@ def main():
                                 >= BLINK_COOLDOWN
                             )
 
-                            if (
-                                valid_blink
-                                and cooldown_finished
-                            ):
-                                print("BLINK -> LEFT CLICK")
-                                pyautogui.click()
-                                set_status(
-                                    "FACE → CLICK",
-                                    0.8
-                                )
-                                last_blink = now
+                            if valid_blink and cooldown_finished:
+                                if blink_anchor is not None:
+                                    pyautogui.moveTo(
+                                        int(blink_anchor[0]),
+                                        int(blink_anchor[1]),
+                                    )
+                                intentional_click("GESTURE → CLICK")
 
                             blink_start = None
+                            blink_open_frames = 0
+                            blink_anchor = None
 
-                    # --------------------------------------------
-                    # 3. HEAD TILT -> SCROLL
-                    # --------------------------------------------
+                        # The pointer keeps following the head. A blink only
+                        # remembers where it started, then clicks that spot.
+                        move_cursor(
+                            target_x,
+                            target_y
+                        )
+                        update_dwell()
 
-                    left_eye = landmarks[33]
-                    right_eye = landmarks[263]
+                        # --------------------------------------------
+                        # 3. HEAD TILT -> SCROLL
+                        # --------------------------------------------
 
-                    eye_slope = (
-                        right_eye.y - left_eye.y
-                    )
+                        left_eye = landmarks[33]
+                        right_eye = landmarks[263]
 
-                    if eye_slope > TILT_THRESHOLD:
-                        candidate = 1
-                    elif eye_slope < -TILT_THRESHOLD:
-                        candidate = -1
-                    else:
-                        candidate = 0
+                        eye_slope = (
+                            right_eye.y - left_eye.y
+                        )
 
-                    # Hysteresis / stability:
-                    # require several frames before changing state.
-                    if candidate != 0:
-
-                        tilt_release_frames = 0
-
-                        if candidate == tilt_candidate:
-                            tilt_candidate_frames += 1
+                        if eye_slope > TILT_THRESHOLD:
+                            candidate = 1
+                        elif eye_slope < -TILT_THRESHOLD:
+                            candidate = -1
                         else:
-                            tilt_candidate = candidate
-                            tilt_candidate_frames = 1
+                            candidate = 0
+
+                        # Hysteresis / stability:
+                        # require several frames before changing state.
+                        if candidate != 0:
+
+                            tilt_release_frames = 0
+
+                            if candidate == tilt_candidate:
+                                tilt_candidate_frames += 1
+                            else:
+                                tilt_candidate = candidate
+                                tilt_candidate_frames = 1
+
+                            if (
+                                tilt_candidate_frames
+                                >= TILT_CONFIRM_FRAMES
+                            ):
+                                tilt_state = candidate
+
+                        else:
+
+                            tilt_candidate_frames = 0
+                            tilt_candidate = 0
+                            tilt_release_frames += 1
+
+                            if (
+                                tilt_release_frames
+                                >= TILT_RELEASE_FRAMES
+                            ):
+                                tilt_state = 0
+
+                        now = time.time()
 
                         if (
-                            tilt_candidate_frames
-                            >= TILT_CONFIRM_FRAMES
+                            tilt_state != 0
+                            and now - last_scroll_time
+                            >= SCROLL_INTERVAL
                         ):
-                            tilt_state = candidate
 
-                    else:
+                            if tilt_state > 0:
+                                pyautogui.scroll(-SCROLL_STEP)
+                                scroll_status = "SCROLL DOWN"
+                            else:
+                                pyautogui.scroll(SCROLL_STEP)
+                                scroll_status = "SCROLL UP"
 
-                        tilt_candidate_frames = 0
-                        tilt_candidate = 0
-                        tilt_release_frames += 1
+                            last_scroll_time = now
 
-                        if (
-                            tilt_release_frames
-                            >= TILT_RELEASE_FRAMES
-                        ):
-                            tilt_state = 0
-
-                    now = time.time()
-
-                    if (
-                        tilt_state != 0
-                        and now - last_scroll_time
-                        >= SCROLL_INTERVAL
-                    ):
-
-                        if tilt_state > 0:
-                            pyautogui.scroll(-SCROLL_STEP)
+                        elif tilt_state > 0:
                             scroll_status = "SCROLL DOWN"
-                        else:
-                            pyautogui.scroll(SCROLL_STEP)
+
+                        elif tilt_state < 0:
                             scroll_status = "SCROLL UP"
-
-                        last_scroll_time = now
-
-                    elif tilt_state > 0:
-                        scroll_status = "SCROLL DOWN"
-
-                    elif tilt_state < 0:
-                        scroll_status = "SCROLL UP"
 
                 else:
                     face_detected = False
                     blink_start = None
+                    blink_open_frames = 0
+                    blink_anchor = None
+                    dwell_anchor = None
+                    dwell_started = None
+                    dwell_progress = 0.0
                     tilt_state = 0
                     tilt_candidate = 0
                     tilt_candidate_frames = 0
@@ -1519,7 +2529,7 @@ def main():
             )
 
             cv2.imshow(
-                "AccessAI Nexus",
+                "ARKAI",
                 frame
             )
 
@@ -1551,7 +2561,7 @@ def main():
 
     finally:
         print()
-        print("Stopping AccessAI...")
+        print("Stopping ARKAI...")
 
         running = False
         voice_stop_event.set()
@@ -1576,7 +2586,7 @@ def main():
 
         print("✓ Camera released")
         print("✓ Voice worker stopped")
-        print("✓ AccessAI closed")
+        print("✓ ARKAI closed")
 
 
 if __name__ == "__main__":
